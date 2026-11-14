@@ -1,0 +1,208 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TH3P4G3 外接 A770 掉线排查报告</title>
+<style>
+body{margin:0;background:#edf2f7;color:#203147;font:16px/1.85 "Microsoft YaHei",system-ui,sans-serif}
+main{max-width:1000px;margin:35px auto;background:white;padding:48px 60px;border-radius:14px}
+h1{font-size:30px;line-height:1.4;color:#143c65}h2{margin-top:40px;font-size:23px;color:#174c70}
+p{margin:18px 0}img{max-width:100%;height:auto;display:block;margin:24px auto}
+a{color:#1765ae}table{width:100%;border-collapse:collapse;font-size:14px;line-height:1.6;margin:24px 0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid #dce5ed}th{background:#edf4f8}
+code{font-size:.9em;background:#eff3f7;padding:2px 5px;border-radius:4px}
+pre{padding:18px;background:#eff3f7;overflow:auto}pre code{padding:0}
+blockquote{margin:20px 0;border-left:4px solid #168478;background:#eef8f5;padding:12px 20px}
+@media(max-width:700px){main{padding:24px 18px;margin:0;border-radius:0}h1{font-size:25px}table{display:block;overflow:auto}}
+@media print{body{background:white}main{margin:0;padding:0;max-width:none}img,table,pre{break-inside:avoid}h2{break-after:avoid}a{color:inherit}}
+</style><main><h1>TH3P4G3 外接 A770 反复掉线排查与省电设置验证</h1>
+<p>2026 年 11 月 13 日整理。测试时间使用 HST（UTC−10）。这是单机排障记录，包含有效的绕过方法和仍未解决的问题。</p>
+<p><strong>这台电脑上，取消显卡坞 USB Root Hub 的“允许计算机关闭此设备以节约电源”后，拔掉鼠标接收器也在后续观察窗口内保持了连接。原生 DX11 初始化时的 LiveKernelEvent 141 仍偶发，不能宣布显卡所有问题已解决。</strong></p>
+<h2>设备与最初症状</h2>
+<table>
+<thead>
+<tr>
+<th>项目</th>
+<th>实验环境</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>笔记本</td>
+<td>ASUS ROG Strix G634JZ，内置 RTX 4080 Laptop 与 Intel UHD</td>
+</tr>
+<tr>
+<td>外接显卡</td>
+<td>Intel Arc A770 Limited Edition 16 GB，驱动 32.0.101.9175</td>
+</tr>
+<tr>
+<td>显卡坞</td>
+<td>TH3P4G3；早期还测试过 GZOSMETA GPU-EG01M，本文的省电结论针对 TH3P4G3</td>
+</tr>
+<tr>
+<td>电源</td>
+<td>TT 额定 650 W SFX 80 PLUS 金牌，两套显卡坞共用，型号由使用者提供</td>
+</tr>
+<tr>
+<td>系统</td>
+<td>Windows 11 Insider Preview；各阶段构建号未完整归档，不将结果外推到全部 Windows 版本</td>
+</tr>
+<tr>
+<td>本轮保持的设置</td>
+<td>ReBAR 未开启；线材对比阶段固定驱动、单闪电口、接收器拔出、Hub 省电禁用</td>
+</tr>
+</tbody>
+</table>
+<p>使用中，显卡坞先出现轻微咔哒声，随后 Windows 反复播放 USB 连接与断开的提示音；部分时段日志确认整个坞及下游设备被移除。另有一种故障表现为 DX11 程序初始化失败，但坞和显卡仍在设备树中。两类现象需要分别统计。</p>
+<p><img alt="设备连接与两条故障路径示意" src="assets/topology.png" /></p>
+<p>图 1：逻辑连接示意。USB 分支的省电设置与 A770 自身的电源状态属于不同对象；图中关系不代表已经定位到某个硬件电路故障。</p>
+<h2>接收器为何成为线索</h2>
+<p>插入 USB 鼠标接收器后，频繁通断明显减少。为了验证是否与空闲省电有关，先保持原策略拔插接收器，再只修改坞内 Root Hub 的权限。</p>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>接收器</th>
+<th>Hub 允许省电</th>
+<th>实际观察</th>
+<th>整坞移除</th>
+<th>新 141</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>B</td>
+<td>拔出</td>
+<td>是</td>
+<td>161.3 秒，出现两次移除后结束</td>
+<td>2</td>
+<td>0</td>
+</tr>
+<tr>
+<td>A2</td>
+<td>插回</td>
+<td>是</td>
+<td>602.8 秒</td>
+<td>0</td>
+<td>0</td>
+</tr>
+<tr>
+<td>C</td>
+<td>再拔出</td>
+<td>否</td>
+<td>901.0 秒</td>
+<td>0</td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+<p>三个阶段均保留 xHCI 控制器原策略。阶段 C 的回读为 Root Hub <code>Enable=False</code>、xHCI <code>Enable=True</code>，并记录到观察期内没有 xHCI D3 完成事件。</p>
+<p><img alt="接收器与电源策略对照实验" src="assets/power-policy-ab.png" /></p>
+<p><strong>这组结果支持“显卡坞 USB 分支的空闲电源管理与整坞掉线有关”。</strong> 接收器可能改变了该分支进入低功耗的条件；具体是驱动、固件还是硬件协同问题，尚未确定。D3 本身是设备低功耗状态，不能直接当作掉线。Windows 的 USB 选择性挂起机制可以独立挂起端口；这里对特定 Hub 的调整是本机绕过方法，并非全局关闭 USB 省电的通用建议。<a href="https://learn.microsoft.com/en-us/windows-hardware/drivers/usbcon/usb-selective-suspend">Microsoft USB 电源管理说明</a></p>
+<p>11 月 12 日还出现过一次复发：10:43–10:53 记录到 5 次整坞移除，检查时 Hub 权限已回到 <code>True</code>。10:54:25 再次设为 <code>False</code>，xHCI 保持 <code>True</code>。这说明<strong>重连、重新枚举或重启后应复查实际设置</strong>；现有日志不足以确定是哪一步使其恢复默认值。</p>
+<h2>其他用户如何尝试和复核</h2>
+<ol>
+<li>打开设备管理器，选择“查看 → 依连接排序”，沿雷电设备树找到显卡坞内的 USB xHCI 控制器及其 <strong>USB Root Hub</strong>。本机控制器硬件标识为 <code>8086:15F0</code>，但不要只凭名称套用到别的电脑。</li>
+<li>可将接收器插入坞的 USB 口，查看它所在的父级路径，以确认目标 Hub。电脑自身的 USB Root Hub 不是本次修改对象。</li>
+<li>在目标 Hub 的“属性 → 电源管理”取消勾选“允许计算机关闭此设备以节约电源”，确定后重新打开属性确认保存。没有该页签时，应先核对设备树和驱动，不要批量禁用设备。</li>
+<li>拔掉接收器，保持线材、端口、驱动和电源不变，先观察空闲，再运行负载，最后观察负载结束后的空闲。每次只改变一个变量，并记下手动拔插时间。</li>
+<li>重新连接或重启后再次确认该 Hub 的设置。需要恢复原状时，勾回原选项即可。</li>
+</ol>
+<p>本次修改立即生效，阶段 C 没有先重启。它限制的是目标 Hub 在空闲时被系统省电关闭，<strong>不等于让 A770 永远保持 D0，也不妨碍正常关机和安全弹出</strong>。本次未依靠提高功耗、开启 ReBAR 或更换驱动来取得阶段 C 的结果。</p>
+<h2>线材对比与尚未解决的 141</h2>
+<p>统一条件下，使用同一个原生 D3D11 计算测试程序，指定 A770、Feature Level 11_0、每批 64 次 dispatch，目标时长 300 秒。退出后继续观察约两分钟，并做三轮 128 MiB 双向复制校验。程序报告的 dispatch 数是本程序工作量，不是游戏帧数。</p>
+<table>
+<thead>
+<tr>
+<th>单闪电口线材</th>
+<th>已记录的初始化</th>
+<th>成功长测 dispatch 数</th>
+<th>主机→显卡</th>
+<th>显卡→主机</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>原装雷电 4 线 1</td>
+<td>1 次成功</td>
+<td>2,163,136</td>
+<td>1.546 GiB/s</td>
+<td>2.342 GiB/s</td>
+</tr>
+<tr>
+<td>贝尔金雷电 5 线</td>
+<td>先失败，重试成功</td>
+<td>2,164,416</td>
+<td>1.544 GiB/s</td>
+<td>2.343 GiB/s</td>
+</tr>
+<tr>
+<td>原装长线 2</td>
+<td>1 次成功</td>
+<td>2,169,344</td>
+<td>1.548 GiB/s</td>
+<td>2.346 GiB/s</td>
+</tr>
+<tr>
+<td>编织线</td>
+<td>先失败两次，第三次成功</td>
+<td>2,167,488</td>
+<td>1.547 GiB/s</td>
+<td>2.347 GiB/s</td>
+</tr>
+</tbody>
+</table>
+<p>复制速率用每轮 GPU 时间戳中位数，再取三轮中位数换算；它不是整条雷电链路的标称带宽。四种线材成功长测的调度速率差距不足 0.3%。样本少、顺序未随机，不能据此给线材故障率排名，也不能推算相对台式机直插的性能损失。</p>
+<p><img alt="线材成功长测性能与初始化结果" src="assets/cable-comparison.png" /></p>
+<p>编织线第三次运行持续 300.02 秒，43 个进程引擎利用率样本平均 96.47%，读回校验通过；结束后空闲约 158 秒，再完成复制测试。14:01:39–14:09:43 窗口内没有新增 141 或整坞移除。此前两次初始化各对应一个 141，13:48 还有一个不属于这三次基准窗口的报告，不能因第三次通过而将它们忽略。</p>
+<p>另外，原装线 1 在“电池＋闪电”口完成了 300 秒负载，但结束约 64 秒后出现 141。这个结果不纳入上表的同端口性能比较，却说明<strong>只看压力测试过程、不检查退出后的日志，会漏掉故障</strong>。</p>
+<p>失败时常见返回值为 <code>DXGI_ERROR_DEVICE_REMOVED (0x887A0005)</code>，多个报告具有以下签名：</p>
+<pre><code class="language-text">LKD_0x141_Tdr:6_IMAGE_igdkmdnd64.sys_GEN12_TRINITY11_GUC_SCHEDULER_ERROR
+</code></pre>
+<p>Microsoft 将 <code>0x141</code> 定义为显示引擎未及时响应的 live dump 标识。它并不直接证明显卡损坏；这里的 <code>DEVICE_REMOVED</code> 也不能替代设备树中的物理移除证据。现阶段只能确认故障落在 Intel 图形调度路径，不能仅凭签名定责到驱动或硬件。<a href="https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/bug-check-0x141---video-engine-timeout-detected">Microsoft 0x141 说明</a></p>
+<h2>已完成的补充稳定性测试</h2>
+<table>
+<thead>
+<tr>
+<th>测试</th>
+<th>实际结果</th>
+<th>适用范围</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>OCCT 3D Adaptive</td>
+<td>20 分 01 秒，无检测错误，无新增掉线或 141</td>
+<td>接收器插着的早期阶段，不等于当前接法的重复试验</td>
+</tr>
+<tr>
+<td>OCCT VRAM</td>
+<td>15 分钟，设置 80%，平均使用约 12.47 GiB，无检测错误或新增掉线、141</td>
+<td>同上，支持该测试覆盖范围内的显存稳定性</td>
+</tr>
+<tr>
+<td>DX12 待机唤醒</td>
+<td>5 轮；每轮确认 A770 处于 D3 后运行 30 秒，均读回通过</td>
+<td>接收器插着的阶段；不能替代 DX11 初始化测试</td>
+</tr>
+<tr>
+<td>Kryptex 计算</td>
+<td>30 分钟，144 次设备检查无异常，无新 141 或断连</td>
+<td>独立补充记录，未由该组文件重新确认线材和端口</td>
+</tr>
+</tbody>
+</table>
+<p><img alt="30分钟计算负载温度与板卡功耗" src="assets/compute-30min.png" /></p>
+<p>30 分钟计算期间有 348 个传感器样本，温度 71–72°C，板卡功耗平均 189.29 W、范围 187–193 W。它说明这套设备能完成该次持续计算；无法排除只在初始化、空闲或切换时触发的问题。</p>
+<h2>日志判读与结论边界</h2>
+<p>监测同时记录 PCI 电源转换、Thunderbolt 事件、PnP 移除、设备在位状态以及 Windows Error Reporting（WER）。计数时采用以下规则：</p>
+<ul>
+<li>整坞掉线：匹配目标桥接设备的 PnP 1010，并结合坞、xHCI、A770 的在位变化；排除人为拔线和安全弹出。</li>
+<li>GPU 超时：筛选 WER 的 <code>EventName=LiveKernelEvent</code>、<code>P1=141</code>，按 <code>ReportId</code> 去重，关联转储或 <code>Report.wer</code> 的故障发生时间。</li>
+<li>D3 与 RTD3：记录其发生对象和时间；单独出现电源转换事件不算实际掉线。</li>
+<li>时间窗口：分开初始化、负载和退出后的观察。系统曾有时钟变化，因此必要时结合 UTC 和事件 RecordId 判断顺序。</li>
+</ul>
+<p>例如 30 分钟计算窗口内 20:40 出现的两条 WER 记录，经同报告标识及 <code>Report.wer</code> 的 <code>EventTime</code> 核对，对应当天 05:26 和 05:38 的旧故障，不计入这次测试的新 141。</p>
+<p><strong>可分享的成果是一个有对照数据支持的整坞掉线绕过方法，以及将整坞掉线与 DX11 超时分开验证的方法。</strong> 目前还不能宣称修复所有 141、排除电源或显卡硬件问题，或适用于全部 TH3P4G3。Intel 的官方文档也将 Arc eGPU 列为未正式支持的配置；这是适用范围说明，不是本机故障原因的证明。<a href="https://www.intel.com/content/www/us/en/support/articles/000098033/graphics.html">Intel eGPU 支持说明</a></p>
+<h2>数据与复用</h2>
+<p><a href="evidence.json">evidence.json</a> 提供从本地日志提取的实验时段、计数、长测与复制结果、传感器样本及来源文件 SHA-256。公开附件已去掉用户名、电脑名称、设备实例唯一后缀和 WER 报告唯一标识；原始事件 XML 与内存转储未打包。</p>
+<p><code>build_figures.py</code> 从这份摘要重建三张数据图和本地浏览版 <code>report.html</code>；拓扑图由 <code>build_topology.py</code> 生成。使用 Python、Matplotlib、Python-Markdown，并提供微软雅黑或 Noto Sans CJK SC 字体即可。脚本只读取本目录文件和生成图片，不查询或修改设备。</p>
+<p>本文中的测试程序参数足以解释比较口径，但本目录没有打包自定义 D3D11 测试程序、硬件绑定的弹出脚本或全部原始日志；独立复现精确跑分仍需要对应程序版本。验证掉线绕过时，应优先重现接收器／Hub 策略对照，而不是追求相同 dispatch 数。</p></main></html>
