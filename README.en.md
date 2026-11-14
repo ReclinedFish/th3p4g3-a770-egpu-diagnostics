@@ -2,6 +2,8 @@
 
 [简体中文](README.md) | **English**
 
+[Jump to the Device Manager screenshot guide](#device-manager-guide)
+
 Prepared November 13, 2026. All test times use HST (UTC−10). This is a single-system troubleshooting record covering a working mitigation and a separate unresolved fault.
 
 **On this system, unchecking “Allow the computer to turn off this device to save power” for the dock's USB Root Hub kept the dock connected during the subsequent observation window, even with the mouse receiver unplugged. Intermittent LiveKernelEvent 141 failures during native DX11 initialization remain unresolved.**
@@ -41,13 +43,45 @@ The xHCI controller's original policy was preserved throughout. Phase C readback
 
 The problem recurred on November 12: five dock removals were recorded between 10:43 and 10:53, and the Hub permission was found back at `True`. At 10:54:25 it was set to `False` again, while xHCI remained `True`. **Recheck the actual policy after reconnection, device re-enumeration, or reboot.** The available logs do not establish which action restored the default.
 
+<a id="device-manager-guide"></a>
+
 ## How to try the workaround and verify it
 
-1. Open **Device Manager → View → Devices by connection**. Follow the Thunderbolt device tree to the USB xHCI controller inside the dock and its **USB Root Hub**. On this system, the controller's vendor/device ID was `8086:15F0`; do not select a device on another machine solely by a similar name.
-2. If needed, plug a receiver into the dock's USB port and inspect its parent chain to identify the correct Hub. The laptop's own USB Root Hub is not the target of this change.
-3. Open the target Hub's **Properties → Power Management** and uncheck **Allow the computer to turn off this device to save power**. Apply it, then reopen the properties to confirm it was saved. If the tab is absent, check the device tree and driver first rather than disabling devices in bulk.
-4. Unplug the receiver. Keep the cable, port, driver, and PSU unchanged. Observe idle behavior, run a workload, and continue observing after the workload exits. Change one variable at a time and record any manual unplug/replug times.
-5. Check the same Hub's setting again after reconnecting or rebooting. To revert this change, restore the original checkbox setting.
+These are actual screenshots of this system's **Chinese Windows interface**, with the corresponding English menu names below. The target is **the USB Root Hub inside the dock**, not the laptop's built-in Hub, the A770, or the xHCI controller itself.
+
+### 1. Show devices by connection
+
+Right-click Windows Start and open **Device Manager**. Select **View → Devices by connection** (shown as **查看 → 按连接列出设备**). This view exposes parent/child relationships so that identically named hubs can be distinguished.
+
+![Device Manager View menu showing the Devices by connection option in Chinese](assets/device-manager/01-view-by-connection.png)
+
+### 2. Locate the dock's USB Root Hub
+
+The expanded path on this system is shown below. **Root Port #25 is specific to this laptop; other systems may use a different path or port number.** The tree may not display the name “TH3P4G3.”
+
+```text
+ACPI x64-based PC
+└─ Microsoft ACPI-Compliant System
+   └─ PCI Express Root Complex
+      └─ Intel(R) PCI Express Root Port #25 - 7A48
+         └─ Multiple PCI Express Upstream/Downstream Switch Ports
+            └─ Intel(R) USB 3.1 eXtensible Host Controller - 1.10 (Microsoft)
+               └─ USB Root Hub (USB 3.0) ← Target of this change
+```
+
+![The dock's USB controller expanded, with its USB Root Hub selected](assets/device-manager/02-dock-usb-root-hub.png)
+
+To check the controller, right-click the parent **USB 3.1 eXtensible Host Controller → Properties → Details → Hardware Ids** (**属性 → 详细信息 → 硬件 Id**). This dock controller's ID contains `VEN_8086&DEV_15F0`. Use this as supporting identification, not as the sole reason to change a device on another system. A receiver plugged into the dock's USB port can also help identify its Hub through the parent chain. Once confirmed, return to the **USB Root Hub** below the controller.
+
+### 3. Clear the power-saving checkbox and verify
+
+Right-click the target **USB Root Hub → Properties → Power Management** (**属性 → 电源管理**). Clear **Allow the computer to turn off this device to save power** (**允许计算机关闭此设备以节约电源**), then click **OK**. Reopen the same page to confirm that the box remains unchecked.
+
+![USB Root Hub Power Management page, with Allow the computer to turn off this device to save power unchecked](assets/device-manager/03-power-management-unchecked.png)
+
+The screenshot shows the saved, unchecked state; no policy was changed to take these screenshots. Readback at capture time showed Hub `Enable=False` and xHCI `Enable=True`. Here, `False` removes the power-saving permission; it does **not** mean “Disable device.” If the Power Management tab is absent, check the device tree and driver first rather than disabling devices in bulk.
+
+After saving, unplug any receiver used for identification. Keep the cable, port, driver, and PSU unchanged, and observe idle behavior, load, and post-load idle behavior. Change one variable at a time and record manual unplug/replug times. **Recheck the same Hub after reconnection, re-enumeration, or reboot.** To revert, restore the original checkbox setting.
 
 The change took effect without a reboot in phase C. It restricts the system's ability to power down that Hub while idle. **It does not force the A770 to remain in D0, and it does not prevent normal shutdown or safe ejection.** Phase C did not depend on raising GPU power limits, enabling ReBAR, or changing the graphics driver.
 
@@ -123,5 +157,7 @@ Use Python with Matplotlib and Python-Markdown. English figures use DejaVu Sans;
 python -m pip install matplotlib Markdown
 python build_english.py
 ```
+
+`assets/device-manager/` contains actual Windows screenshots shared by both languages. They are captured UI images, not interface mockups generated by the plotting scripts.
 
 The custom D3D11 test program, hardware-specific ejection script, and complete raw logs are not bundled. Reproducing the exact benchmark counts requires the corresponding test-program version. To validate the disconnect workaround, prioritize the receiver/Hub-policy comparison rather than matching dispatch counts.

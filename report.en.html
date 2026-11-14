@@ -12,6 +12,7 @@ blockquote{margin:20px 0;border-left:4px solid #168478;background:#eef8f5;paddin
 @media print{body{background:white}main{margin:0;padding:0;max-width:none}img,table,pre{break-inside:avoid}h2{break-after:avoid}a{color:inherit}}
 </style></head><body><main><h1>TH3P4G3 and Intel Arc A770 disconnects and USB power management</h1>
 <p><a href="report.html">简体中文</a> | <strong>English</strong></p>
+<p><a href="#device-manager-guide">Jump to the Device Manager screenshot guide</a></p>
 <p>Prepared November 13, 2026. All test times use HST (UTC−10). This is a single-system troubleshooting record covering a working mitigation and a separate unresolved fault.</p>
 <p><strong>On this system, unchecking “Allow the computer to turn off this device to save power” for the dock's USB Root Hub kept the dock connected during the subsequent observation window, even with the mouse receiver unplugged. Intermittent LiveKernelEvent 141 failures during native DX11 initialization remain unresolved.</strong></p>
 <h2>Setup and symptoms</h2>
@@ -96,14 +97,29 @@ blockquote{margin:20px 0;border-left:4px solid #168478;background:#eef8f5;paddin
 <p><img alt="Receiver and Root Hub power-policy comparison" src="assets/en/power-policy-ab.png" /></p>
 <p><strong>These results support a link between idle power management in the dock's USB branch and removal of the entire dock.</strong> The receiver may have changed the conditions under which that branch entered a low-power state. The evidence does not isolate a particular driver, firmware component, or hardware interaction. D3 is a device low-power state; observing it is not, by itself, evidence of a disconnect. Windows USB selective suspend can suspend individual ports independently. This targeted Hub change is a workaround for this system, not a general recommendation to disable USB power saving globally. <a href="https://learn.microsoft.com/en-us/windows-hardware/drivers/usbcon/usb-selective-suspend">Microsoft USB selective suspend documentation</a></p>
 <p>The problem recurred on November 12: five dock removals were recorded between 10:43 and 10:53, and the Hub permission was found back at <code>True</code>. At 10:54:25 it was set to <code>False</code> again, while xHCI remained <code>True</code>. <strong>Recheck the actual policy after reconnection, device re-enumeration, or reboot.</strong> The available logs do not establish which action restored the default.</p>
+<p><a id="device-manager-guide"></a></p>
 <h2>How to try the workaround and verify it</h2>
-<ol>
-<li>Open <strong>Device Manager → View → Devices by connection</strong>. Follow the Thunderbolt device tree to the USB xHCI controller inside the dock and its <strong>USB Root Hub</strong>. On this system, the controller's vendor/device ID was <code>8086:15F0</code>; do not select a device on another machine solely by a similar name.</li>
-<li>If needed, plug a receiver into the dock's USB port and inspect its parent chain to identify the correct Hub. The laptop's own USB Root Hub is not the target of this change.</li>
-<li>Open the target Hub's <strong>Properties → Power Management</strong> and uncheck <strong>Allow the computer to turn off this device to save power</strong>. Apply it, then reopen the properties to confirm it was saved. If the tab is absent, check the device tree and driver first rather than disabling devices in bulk.</li>
-<li>Unplug the receiver. Keep the cable, port, driver, and PSU unchanged. Observe idle behavior, run a workload, and continue observing after the workload exits. Change one variable at a time and record any manual unplug/replug times.</li>
-<li>Check the same Hub's setting again after reconnecting or rebooting. To revert this change, restore the original checkbox setting.</li>
-</ol>
+<p>These are actual screenshots of this system's <strong>Chinese Windows interface</strong>, with the corresponding English menu names below. The target is <strong>the USB Root Hub inside the dock</strong>, not the laptop's built-in Hub, the A770, or the xHCI controller itself.</p>
+<h3>1. Show devices by connection</h3>
+<p>Right-click Windows Start and open <strong>Device Manager</strong>. Select <strong>View → Devices by connection</strong> (shown as <strong>查看 → 按连接列出设备</strong>). This view exposes parent/child relationships so that identically named hubs can be distinguished.</p>
+<p><img alt="Device Manager View menu showing the Devices by connection option in Chinese" src="assets/device-manager/01-view-by-connection.png" /></p>
+<h3>2. Locate the dock's USB Root Hub</h3>
+<p>The expanded path on this system is shown below. <strong>Root Port #25 is specific to this laptop; other systems may use a different path or port number.</strong> The tree may not display the name “TH3P4G3.”</p>
+<pre><code class="language-text">ACPI x64-based PC
+└─ Microsoft ACPI-Compliant System
+   └─ PCI Express Root Complex
+      └─ Intel(R) PCI Express Root Port #25 - 7A48
+         └─ Multiple PCI Express Upstream/Downstream Switch Ports
+            └─ Intel(R) USB 3.1 eXtensible Host Controller - 1.10 (Microsoft)
+               └─ USB Root Hub (USB 3.0) ← Target of this change
+</code></pre>
+<p><img alt="The dock's USB controller expanded, with its USB Root Hub selected" src="assets/device-manager/02-dock-usb-root-hub.png" /></p>
+<p>To check the controller, right-click the parent <strong>USB 3.1 eXtensible Host Controller → Properties → Details → Hardware Ids</strong> (<strong>属性 → 详细信息 → 硬件 Id</strong>). This dock controller's ID contains <code>VEN_8086&amp;DEV_15F0</code>. Use this as supporting identification, not as the sole reason to change a device on another system. A receiver plugged into the dock's USB port can also help identify its Hub through the parent chain. Once confirmed, return to the <strong>USB Root Hub</strong> below the controller.</p>
+<h3>3. Clear the power-saving checkbox and verify</h3>
+<p>Right-click the target <strong>USB Root Hub → Properties → Power Management</strong> (<strong>属性 → 电源管理</strong>). Clear <strong>Allow the computer to turn off this device to save power</strong> (<strong>允许计算机关闭此设备以节约电源</strong>), then click <strong>OK</strong>. Reopen the same page to confirm that the box remains unchecked.</p>
+<p><img alt="USB Root Hub Power Management page, with Allow the computer to turn off this device to save power unchecked" src="assets/device-manager/03-power-management-unchecked.png" /></p>
+<p>The screenshot shows the saved, unchecked state; no policy was changed to take these screenshots. Readback at capture time showed Hub <code>Enable=False</code> and xHCI <code>Enable=True</code>. Here, <code>False</code> removes the power-saving permission; it does <strong>not</strong> mean “Disable device.” If the Power Management tab is absent, check the device tree and driver first rather than disabling devices in bulk.</p>
+<p>After saving, unplug any receiver used for identification. Keep the cable, port, driver, and PSU unchanged, and observe idle behavior, load, and post-load idle behavior. Change one variable at a time and record manual unplug/replug times. <strong>Recheck the same Hub after reconnection, re-enumeration, or reboot.</strong> To revert, restore the original checkbox setting.</p>
 <p>The change took effect without a reboot in phase C. It restricts the system's ability to power down that Hub while idle. <strong>It does not force the A770 to remain in D0, and it does not prevent normal shutdown or safe ejection.</strong> Phase C did not depend on raising GPU power limits, enabling ReBAR, or changing the graphics driver.</p>
 <h2>Cable comparisons and the unresolved 141 failures</h2>
 <p>Matched runs used the same native D3D11 compute test, explicitly selecting the A770, Feature Level 11_0, 64 dispatches per batch, and a target duration of 300 seconds. Follow-up observation lasted roughly two minutes after the program exited, with three rounds of 128 MiB bidirectional copy verification where completed. Dispatch counts describe this program's workload; they are not game frames.</p>
@@ -233,4 +249,5 @@ blockquote{margin:20px 0;border-left:4px solid #168478;background:#eef8f5;paddin
 <pre><code class="language-bash">python -m pip install matplotlib Markdown
 python build_english.py
 </code></pre>
+<p><code>assets/device-manager/</code> contains actual Windows screenshots shared by both languages. They are captured UI images, not interface mockups generated by the plotting scripts.</p>
 <p>The custom D3D11 test program, hardware-specific ejection script, and complete raw logs are not bundled. Reproducing the exact benchmark counts requires the corresponding test-program version. To validate the disconnect workaround, prioritize the receiver/Hub-policy comparison rather than matching dispatch counts.</p></main></body></html>
