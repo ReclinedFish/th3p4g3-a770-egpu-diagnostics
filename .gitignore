@@ -1,0 +1,5 @@
+*.local.json
+**/captures/
+**/bin/
+**/obj/
+__pycache__/

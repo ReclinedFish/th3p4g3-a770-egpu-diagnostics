@@ -1,0 +1,7 @@
+{
+  "DockInstanceId": "<TH3P4G3 upstream PCIe bridge instance path>",
+  "GpuInstanceId": "<Arc A770 GPU instance path>",
+  "UsbHubInstanceId": "<dock USB 3.0 root hub instance path>",
+  "DownstreamPortInstanceId": "<dock downstream expansion port instance path>",
+  "AllowedUsbInstanceIds": []
+}
