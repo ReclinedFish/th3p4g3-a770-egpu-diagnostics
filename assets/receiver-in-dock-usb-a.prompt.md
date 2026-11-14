@@ -1,0 +1,10 @@
+# Receiver connection illustration provenance
+
+Asset: `receiver-in-dock-usb-a.png`
+Mode: built-in imagegen tool, reference-guided generation.
+This is an AI-generated connection illustration, not a photograph, a dimensional drawing, or evidence of a hardware test. The visual reference was the seller-published TH3P4G3 interface diagram:
+https://sc04.alicdn.com/kf/H248af1e2a8c14b318e56c6ef826980b8n/220568862/H248af1e2a8c14b318e56c6ef826980b8n.jpg
+
+Final generation prompt:
+
+Create a new clean technical connection illustration, based on the TH3P4G3 dock port arrangement shown in the reference, for a Chinese open-source eGPU documentation page. This is an instructional illustration, NOT a claimed real photograph. Landscape approximately 3:2, white background, realistic simplified 3D technical product rendering. Show the front-left end of a TH3P4G3 bare aluminum eGPU board, a dark neutral A770 GPU only partially visible standing in its PCIe slot in the background, with the three dock sockets clear in a close-up: one blue rectangular USB-A socket at the left end of the row, then two smaller USB-C sockets. A small generic black wireless mouse USB nano receiver is ALREADY FULLY INSERTED in the blue USB-A socket, black plastic cap protrudes visibly and metal plug mostly hidden inside socket. The two USB-C sockets remain visible, one with a slim cable toward an abstract laptop silhouette if not obscuring details. Do not place receiver in a USB-C socket. Do not reproduce the reference advertisement text or commercial logos. Add restrained blue callout arrow aimed at the receiver's USB-A connection, concise crisp Chinese labels: title '鼠标接收器插在显卡坞 USB-A 口'; receiver label 'USB 鼠标接收器'; socket label 'USB-A'; separate subtle label beneath the two other ports '雷电 USB-C'; bottom footer in gray '连接示意图 · AI 生成 · 非实拍'. Avoid claiming any specific receiver brand or actual test configuration. Accurate connector proportions and legible labels are essential. Composition should focus on the inserted receiver and clear correct USB-A location, spacious professional documentation style.

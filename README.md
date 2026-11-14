@@ -10,6 +10,8 @@
 
 Windows 需要 **PowerShell 7**。解压 Release ZIP 后双击 `tools/eGPU-Hotplug.cmd`。工具会从当前设备树识别 A770、显卡坞上游桥、USB 根集线器与下游扩展端口，支持本仓库验证过的 TH3P4G3 拓扑，通常无需手填设备实例路径。识别不唯一、设备未连接或拓扑不符时不会猜选弹出目标；仍可用[配置模板](tools/eGPU-Hotplug.example.json)建立本机配置，详见工具说明。
 
+从 v0.2.0 起，直接插在坞 USB 口的纯 HID 鼠标或键鼠接收器可自动通过外设检查，无需拔下或逐个填写白名单。工具检查整个设备子树，要求 USB 硬件接口均为 HID、包含标准鼠标集合且所有节点在线正常；严格核对的 Windows 软件组件叶节点可随同通过，不算额外硬件功能。移动硬盘、U 盘、额外 Hub、未知或混合硬件功能设备仍会阻止弹出。旧 `AllowedUsbInstanceIds` 配置不能绕过这些检查。详见[识别范围与限制](docs/usb-receiver-workaround.md#自动识别接收器与存储保护)。
+
 选 **1** 会尝试关闭占用 A770 的应用；如果应用等待保存，先保存并关闭再重试。**只有看到 Windows 确认代码 47 才拔雷电线。** 重新插入后选 **2**，工具确认设备连续就绪 5 秒及 A770 代码 0；选 **3** 查看状态。
 
 ```powershell
@@ -20,9 +22,9 @@ Windows 需要 **PowerShell 7**。解压 Release ZIP 后双击 `tools/eGPU-Hotpl
 
 ![热拔插工具实际运行：代码 47 后拔线，插回后代码 0](assets/hotplug-console.png)
 
-用户提供的本机实际运行截图，展示此前版本成功弹出和重新识别的过程。它是界面与操作顺序示例；自动识别版的新增验证范围见 [v0.1.0 发布说明](docs/release-v0.1.0.md)。截图不含用户名或设备实例唯一后缀。
+用户提供的本机实际运行截图，展示此前版本成功弹出和重新识别的过程。它是界面与操作顺序示例；当前版本的改动与验证范围见 [v0.2.0 发布说明](docs/release-v0.2.0.md)，初版自动识别验证保留在 [v0.1.0 发布说明](docs/release-v0.1.0.md)。截图不含用户名或设备实例唯一后缀。
 
-首次发布提供 ZIP 和 SHA-256 校验文件。这个工具按 [GitHub Releases](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases) 分发；[GitHub Packages](https://docs.github.com/en/packages/learn-github-packages/introduction-to-github-packages) 面向 npm、NuGet、容器等包管理器，本工具无需另建包注册表。工具源码采用 [MIT 许可证](tools/LICENSE)。
+Release 提供 ZIP 和 SHA-256 校验文件。这个工具按 [GitHub Releases](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases) 分发；[GitHub Packages](https://docs.github.com/en/packages/learn-github-packages/introduction-to-github-packages) 面向 npm、NuGet、容器等包管理器，本工具无需另建包注册表。工具源码采用 [MIT 许可证](tools/LICENSE)。
 
 最近的 DX11 复测首轮 5 分钟和闲置后的 3 次重启均通过，观察窗口内未记录新的 141 或雷电掉线；这不代表此前间歇性问题已根治。
 
@@ -32,6 +34,10 @@ Windows 需要 **PowerShell 7**。解压 Release ZIP 后双击 `tools/eGPU-Hotpl
 
 它是针对整坞空闲掉线的低门槛尝试，**不能保证修复 DX11 初始化失败或 LiveKernelEvent 141**。[接收器配图、网页来源、实测对照和复核方法](docs/usb-receiver-workaround.md)。不想长期占用 USB 口，可以按下方设备管理器步骤，仅取消显卡坞 Root Hub 的省电权限。
 
+
+![USB 鼠标接收器插在 TH3P4G3 显卡坞 USB-A 口的连接示意](assets/receiver-in-dock-usb-a.png)
+
+AI 生成的连接示意，非实拍、非测试证据；接口布局参考[卖家公开的 TH3P4G3 安装资料](https://minixpc.com/products/upgraded-th3p4g3-thunderbolt-compatible-gpu-video-card-dock-laptop-to-external-graphic-card-for-macbook-notebook-pd-60w-40gbps)。矩形 USB-A 用于接收器，旁边两个 USB-C 为雷电接口。该资料没有承诺接收器能修复掉线或 141。
 
 [![USB 鼠标接收器外观示例](https://upload.wikimedia.org/wikipedia/commons/7/7d/Logitech_unifying_receiver.jpg)](docs/usb-receiver-workaround.md)
 

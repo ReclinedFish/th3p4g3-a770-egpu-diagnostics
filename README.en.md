@@ -10,6 +10,8 @@
 
 Windows requires **PowerShell 7**. Extract the release ZIP and double-click `tools/eGPU-Hotplug.cmd`. The tool discovers the A770, dock upstream bridge, USB root hub, and downstream expansion port from the current device tree. It supports the TH3P4G3 topology validated in this repository, so manual instance paths are normally unnecessary. It will not guess an eject target when discovery is ambiguous, the device is disconnected, or the topology does not match. A local override based on the [configuration template](tools/eGPU-Hotplug.example.json) remains available; see the tool guide.
 
+Since v0.2.0, directly connected HID-only mice and mouse/keyboard receivers can pass the accessory guard automatically, without removal or a per-device allowlist. Every USB hardware interface must be HID, the complete subtree must include a standard mouse collection, and every node must be present and healthy. Strictly verified Windows software-component leaves may accompany it without counting as additional hardware functions. External drives, flash drives, additional hubs, unknown functions and mixed hardware functions still block ejection. Legacy `AllowedUsbInstanceIds` entries cannot bypass these checks. See [recognition scope and limits](docs/usb-receiver-workaround.en.md#automatic-receiver-recognition-and-storage-protection).
+
 Option **1** attempts to close applications using the A770. Save and close an application if it is waiting for input. **Unplug the Thunderbolt cable only after Windows confirms code 47.** After reconnecting, choose **2** to require five seconds of continuous readiness and A770 code 0. Option **3** shows status.
 
 ```powershell
@@ -20,9 +22,9 @@ Option **1** attempts to close applications using the A770. Save and close an ap
 
 ![Actual hot-plug console: code 47 before unplugging and code 0 after reconnecting](assets/hotplug-console.png)
 
-User-supplied screenshot from this system, showing a successful eject and reconnection with the earlier tool version. It illustrates the interface and sequence. See the [v0.1.0 release notes](docs/release-v0.1.0.md) for the validation scope of automatic discovery. The screenshot contains no username or unique device-instance suffix.
+User-supplied screenshot from this system, showing a successful eject and reconnection with the earlier tool version. It illustrates the interface and sequence. See the [v0.2.0 release notes](docs/release-v0.2.0.md) for current changes and validation limits; the original discovery checks remain documented in [v0.1.0](docs/release-v0.1.0.md). The screenshot contains no username or unique device-instance suffix.
 
-The first release includes a ZIP and SHA-256 checksums. This tool is distributed through [GitHub Releases](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases). [GitHub Packages](https://docs.github.com/en/packages/learn-github-packages/introduction-to-github-packages) serves package managers such as npm, NuGet, and container clients; this script does not need a separate registry package. Tool source code is under the [MIT License](tools/LICENSE).
+Releases include a ZIP and SHA-256 checksums. This tool is distributed through [GitHub Releases](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases). [GitHub Packages](https://docs.github.com/en/packages/learn-github-packages/introduction-to-github-packages) serves package managers such as npm, NuGet, and container clients; this script does not need a separate registry package. Tool source code is under the [MIT License](tools/LICENSE).
 
 The latest DX11 retest passed a five-minute run and three post-idle launches, without a new 141 or Thunderbolt disconnect in that observation window. It does not establish a permanent fix for earlier intermittent failures.
 
@@ -32,6 +34,10 @@ The latest DX11 retest passed a five-minute run and three post-idle launches, wi
 
 This is a simple trial for whole-dock idle disconnects, **not a guaranteed fix for DX11 initialization failures or LiveKernelEvent 141**. See the [receiver photo, web sources, measured comparison, and verification steps](docs/usb-receiver-workaround.en.md). To avoid occupying a USB port, the Device Manager guide below documents an alternative: remove the power-off permission only for the dock's USB Root Hub.
 
+
+![Connection illustration: a USB mouse receiver inserted into the TH3P4G3 USB-A port](assets/receiver-in-dock-usb-a.png)
+
+AI-generated connection illustration, not a photograph or test evidence. Port layout references the [seller’s TH3P4G3 installation material](https://minixpc.com/products/upgraded-th3p4g3-thunderbolt-compatible-gpu-video-card-dock-laptop-to-external-graphic-card-for-macbook-notebook-pd-60w-40gbps). The rectangular USB-A takes the receiver; the two adjacent USB-C ports are Thunderbolt connections. The material does not promise a receiver-based fix for disconnects or 141.
 
 [![Example USB wireless mouse receiver](https://upload.wikimedia.org/wikipedia/commons/7/7d/Logitech_unifying_receiver.jpg)](docs/usb-receiver-workaround.en.md)
 

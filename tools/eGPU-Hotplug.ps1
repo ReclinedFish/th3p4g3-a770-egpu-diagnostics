@@ -59,6 +59,8 @@ if ($manualConfig -and $manualConfig.Contains('AllowedUsbInstanceIds')) {
             throw 'AllowedUsbInstanceIds 中的每项必须是 USB 设备的完整实例路径。'
         }
     }
+    # Retained for configuration compatibility only. An old whitelist cannot bypass
+    # the HID-only check (in particular, cannot allow a disk or composite storage).
     $allowedUsbIds = $manualConfig.AllowedUsbInstanceIds
 }
 $noSuchDevNode = 0x0D
@@ -82,6 +84,65 @@ namespace EgpuHotplug
 
     public static class ConfigManager
     {
+        [StructLayout(LayoutKind.Sequential)]
+        public struct DevicePropertyKey
+        {
+            public System.Guid FormatId;
+            public uint PropertyId;
+        }
+
+        [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern uint CM_Get_DevNode_PropertyW(uint device, ref DevicePropertyKey key,
+            out uint type, [Out] byte[] buffer, ref uint length, uint flags);
+
+        private static byte[] ReadProperty(uint device, uint property, uint expectedType, bool allowMissing)
+        {
+            var key = new DevicePropertyKey {
+                FormatId = new System.Guid("a45c254e-df1c-4efd-8020-67d146a850e0"), PropertyId = property
+            };
+            for (int attempt = 0; attempt < 3; attempt++)
+            {
+                uint size = 0, type;
+                uint result = CM_Get_DevNode_PropertyW(device, ref key, out type, null, ref size, 0);
+                if (result == 0x25 && allowMissing) return new byte[0]; // CR_NO_SUCH_VALUE
+                if (result != 0x1A || size == 0 || size > 65536 || type != expectedType)
+                    throw new System.InvalidOperationException("Cannot read a required USB device property.");
+                byte[] buffer = new byte[size];
+                result = CM_Get_DevNode_PropertyW(device, ref key, out type, buffer, ref size, 0);
+                if (result == 0x1A) continue; // CR_BUFFER_SMALL: device properties changed
+                if (result != 0 || type != expectedType || size == 0 || size > buffer.Length)
+                    throw new System.InvalidOperationException(string.Format(
+                        "USB property {0} changed during inspection (result 0x{1:X}, type 0x{2:X}, size {3}/{4}).",
+                        property, result, type, size, buffer.Length));
+                // ConfigMgr can return fewer bytes than its size query, notably
+                // four requested bytes but two returned for an empty MULTI_SZ.
+                if (size < buffer.Length) System.Array.Resize(ref buffer, (int)size);
+                return buffer;
+            }
+            throw new System.InvalidOperationException("USB device properties did not stabilize.");
+        }
+
+        public static string ReadClassGuid(uint device)
+        {
+            var value = ReadProperty(device, 10, 0x0D, false); // DEVPKEY_Device_ClassGuid, GUID
+            if (value.Length != 16) throw new System.InvalidOperationException("Invalid USB class GUID.");
+            return new System.Guid(value).ToString("D");
+        }
+
+        public static string[] ReadDeviceStrings(uint device, uint property, bool list, bool allowMissing)
+        {
+            var value = ReadProperty(device, property, list ? 0x2012u : 0x12u, allowMissing);
+            if (value.Length == 0) return new string[0];
+            if (list && value.Length == 2 && value[0] == 0 && value[1] == 0) return new string[0];
+            if (value.Length % 2 != 0 || value.Length < (list ? 4 : 2) ||
+                value[value.Length - 1] != 0 || value[value.Length - 2] != 0 ||
+                (list && (value[value.Length - 3] != 0 || value[value.Length - 4] != 0)))
+                throw new System.InvalidOperationException("Invalid USB property string.");
+            var result = Encoding.Unicode.GetString(value).Split(new char[] { '\0' }, System.StringSplitOptions.RemoveEmptyEntries);
+            if (!list && result.Length > 1) throw new System.InvalidOperationException("Invalid USB service property.");
+            return result;
+        }
+
         [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
         public static extern uint CM_Get_Device_ID_List_SizeW(out uint length, string filter, uint flags);
 
@@ -307,7 +368,120 @@ function Update-DeviceSelection {
     return $true
 }
 
-function Assert-DockAccessories([uint32]$DockNode) {
+function Get-UsbDeviceFacts([string]$InstanceId) {
+    $state = Get-DeviceState $InstanceId
+    if (!$state.Present -or !$state.Started -or $state.Problem -ne 0) {
+        throw 'USB 设备尚未就绪。'
+    }
+    # Use nonlocalized properties, never a friendly-name / vendor-name heuristic.
+    # HIDClass puts HID_DEVICE_SYSTEM_MOUSE in HardwareIds, not CompatibleIds.
+    [pscustomobject]@{
+        Node = $state.Node
+        ClassGuid = [EgpuHotplug.ConfigManager]::ReadClassGuid($state.Node)
+        Service = ([EgpuHotplug.ConfigManager]::ReadDeviceStrings($state.Node, 6, $false, $true) -join '')
+        HardwareIds = @([EgpuHotplug.ConfigManager]::ReadDeviceStrings($state.Node, 3, $true, $false))
+        CompatibleIds = @([EgpuHotplug.ConfigManager]::ReadDeviceStrings($state.Node, 4, $true, $true))
+    }
+}
+
+function Get-UsbMouseTreeSnapshot([string]$RootId, [string]$ExpectedParentId) {
+    $usbClass = '36fc9e60-c465-11cf-8056-444553540000'
+    $hidClass = '745a17a0-74d3-11d0-b6fe-00a0c90f57da'
+    $mouseClass = '4d36e96f-e325-11ce-bfc1-08002be10318'
+    $keyboardClass = '4d36e96b-e325-11ce-bfc1-08002be10318'
+    $softwareClass = '5c4c3332-344d-483c-8739-259e934c9cc8'
+    $vendorMatch = [regex]::Match($RootId, '(?i)^USB\\VID_([0-9A-F]{4})&PID_[0-9A-F]{4}(?:&[^\\]+)?\\')
+    if (!$vendorMatch.Success) { throw '无法识别 USB 鼠标设备根节点。' }
+    $softwareIdPattern = '^SWC\\VID_' + $vendorMatch.Groups[1].Value + '&PID_[0-9A-F]{4}(?:&[A-Z0-9_]+)*$'
+    $storageClasses = @('4d36e967-e325-11ce-bfc1-08002be10318', # DiskDrive
+        '4d36e97b-e325-11ce-bfc1-08002be10318', # SCSIAdapter (including UASP)
+        '71a27cdd-812a-11d0-bec7-08002be2092f', # Volume
+        '4d36e965-e325-11ce-bfc1-08002be10318', # CDROM
+        '53f5630d-b6bf-11d0-94f2-00a0c91efb8b') # Volume interface, defensive
+    $queue = [Collections.Generic.Queue[object]]::new()
+    $queue.Enqueue(@{ Id = $RootId; Parent = $ExpectedParentId; ParentKind = 'RootHub'; Depth = 0 })
+    $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $records = [Collections.Generic.List[string]]::new()
+    $hasMouse = $false
+    while ($queue.Count) {
+        $entry = $queue.Dequeue()
+        if ($entry.Depth -gt 8 -or $seen.Count -ge 64 -or !$seen.Add($entry.Id)) {
+            throw 'USB 子设备关系重复或超出可核对范围。'
+        }
+        if ((Get-ParentInstanceId $entry.Id) -ne $entry.Parent) { throw 'USB 连接关系已变化。' }
+        $facts = Get-UsbDeviceFacts $entry.Id
+        $children = @(Get-ChildInstanceIds $facts.Node | Sort-Object)
+        $ids = @($facts.HardwareIds) + @($facts.CompatibleIds)
+        if (!$facts.HardwareIds.Count -or
+            $entry.Id -match '^(USBSTOR|SCSI|STORAGE)\\' -or
+            $facts.Service -match '^(USBSTOR|UASPStor|disk|partmgr|volmgr|volsnap|cdrom|spaceport|stor.*)$' -or
+            $facts.ClassGuid -in $storageClasses -or
+            @($ids | Where-Object { $_ -match '^(USBSTOR|SCSI|STORAGE)\\|^USB\\(?:.*&)?Class_08(?:&|$)' }).Count) {
+            throw 'USB 设备含存储功能，或缺少必需的识别信息。'
+        }
+        $kind = $null
+        if ($entry.Id -match '^USB\\VID_[0-9A-F]{4}&PID_[0-9A-F]{4}(?:&[^\\]+)?\\') {
+            if ($entry.ParentKind -eq 'RootHub' -and $facts.ClassGuid -eq $usbClass -and
+                $facts.Service -eq 'usbccgp' -and 'USB\COMPOSITE' -in $facts.CompatibleIds -and $children.Count) {
+                $kind = 'Composite'
+            } elseif ($entry.ParentKind -in @('RootHub', 'Composite') -and $facts.ClassGuid -eq $hidClass -and
+                $facts.Service -eq 'HidUsb' -and 'USB\Class_03' -in $facts.CompatibleIds -and $children.Count) {
+                $kind = 'HidTransport'
+            }
+        } elseif ($entry.Id -match '^HID\\' -and $entry.ParentKind -eq 'HidTransport' -and !$children.Count -and
+            'HID_DEVICE' -in $facts.HardwareIds) {
+            if ($facts.ClassGuid -eq $mouseClass -and $facts.Service -eq 'mouhid' -and
+                'HID_DEVICE_SYSTEM_MOUSE' -in $facts.HardwareIds) {
+                $kind = 'MouseCollection'
+                $hasMouse = $true
+            } elseif ($facts.ClassGuid -eq $keyboardClass -and $facts.Service -eq 'kbdhid' -and
+                'HID_DEVICE_SYSTEM_KEYBOARD' -in $facts.HardwareIds) {
+                $kind = 'KeyboardCollection'
+            } elseif ($facts.ClassGuid -eq $hidClass -and !$facts.Service -and
+                @($facts.HardwareIds | Where-Object { $_ -match '^HID_DEVICE_UP:[0-9A-F]{4}_U:[0-9A-F]{4}$' }).Count) {
+                # Standard HID consumer/vendor collections have no function service.
+                # Custom drivers, unknown interfaces and hubs fail closed.
+                $kind = 'HidCollection'
+            }
+        } elseif ($entry.Id -match '^SWD\\DRIVERENUM\\' -and $entry.ParentKind -eq 'HidTransport' -and
+            $facts.ClassGuid -eq $softwareClass -and !$facts.Service -and !$children.Count -and
+            !@($facts.HardwareIds | Where-Object { $_ -notmatch $softwareIdPattern }).Count -and
+            $facts.CompatibleIds.Count -eq 3 -and 'SWC\Generic' -in $facts.CompatibleIds -and
+            'SWD\GenericRaw' -in $facts.CompatibleIds -and 'SWD\Generic' -in $facts.CompatibleIds) {
+            # Windows AddComponent creates virtual children to install associated
+            # software. Permit only a healthy same-vendor leaf with no associated
+            # function-driver service under a verified HidUsb interface; this does
+            # not assert that its package has no Win32 services. Never exempt siblings.
+            $kind = 'HidSoftwareLeaf'
+        }
+        if (!$kind) { throw 'USB 设备包含集线器、非标准驱动或尚未核对的功能。' }
+        $after = Get-DeviceState $entry.Id
+        if (!$after.Present -or !$after.Started -or $after.Problem -ne 0 -or $after.Node -ne $facts.Node) {
+            throw 'USB 设备在核对时发生变化。'
+        }
+        $records.Add((@($entry.Id, $entry.Parent, $facts.Node, $kind, $facts.ClassGuid, $facts.Service,
+            ($facts.HardwareIds -join ';'), ($facts.CompatibleIds -join ';'), ($children -join ';')) -join '|'))
+        foreach ($child in $children) {
+            $queue.Enqueue(@{ Id = $child; Parent = $entry.Id; ParentKind = $kind; Depth = $entry.Depth + 1 })
+        }
+    }
+    if (!$hasMouse) { throw 'USB HID 设备没有可核对的标准鼠标功能。' }
+    # Snapshot remains in memory and must never be printed or written to a public log.
+    return ($records | Sort-Object) -join "`n"
+}
+
+function Assert-UsbMouseAccessory([string]$RootId, [string]$ExpectedParentId) {
+    try {
+        $first = Get-UsbMouseTreeSnapshot $RootId $ExpectedParentId
+        $second = Get-UsbMouseTreeSnapshot $RootId $ExpectedParentId
+        if ($first -cne $second) { throw 'USB 设备属性或子设备在核对时发生变化。' }
+    } catch {
+        # Do not expose unique device suffixes through native exceptions.
+        throw '显卡坞 USB 上存在存储设备、非鼠标 HID 设备或无法完整核对的设备。请先单独安全移除并拔下这些设备，再重试；白名单不能跳过此检查。'
+    }
+}
+
+function Assert-DockAccessories([uint32]$DockNode, [switch]$Report) {
     $hub = Get-DeviceState $hubId
     $port = Get-DeviceState $extraPortId
     if (!$hub.Started -or $hub.Problem -ne 0 -or !$port.Present -or
@@ -329,10 +503,18 @@ function Assert-DockAccessories([uint32]$DockNode) {
         !(Test-KnownGpuBranch $gpuBranches[0] $arcId) -or !(Test-KnownUsbBranch $usbBranches[0] $hubId)) {
         throw '显卡坞的 GPU 或 USB 分支含有未核对的设备，先保持雷电线连接。'
     }
-    $otherUsb = @(Get-ChildInstanceIds $hub.Node | Where-Object { $_ -notin $allowedUsbIds })
+    $usbAccessories = @(Get-ChildInstanceIds $hub.Node | Sort-Object)
+    foreach ($accessory in $usbAccessories) { Assert-UsbMouseAccessory $accessory $hubId }
     $otherThunderbolt = @(Get-ChildInstanceIds $port.Node)
-    if ($otherUsb.Count -or $otherThunderbolt.Count) {
+    if ($otherThunderbolt.Count) {
         throw '显卡坞还有其他外接设备。请先单独安全移除并拔下这些设备，再重试。'
+    }
+    # A new direct child arriving during inspection must also be checked.
+    if (($usbAccessories -join '|') -cne ((@(Get-ChildInstanceIds $hub.Node | Sort-Object)) -join '|')) {
+        throw '核对期间显卡坞 USB 设备发生变化，请保持雷电线连接并重试。'
+    }
+    if ($Report -and $usbAccessories.Count) {
+        Write-Host ("已自动核对并允许 {0} 个鼠标/HID 接收器及符合规则的软件组件。拔线后坞上鼠标将暂时不可用。" -f $usbAccessories.Count)
     }
 }
 
@@ -553,7 +735,7 @@ function Invoke-ArcEject {
         !(Test-UnderDock $arc.Node $dock.Node)) {
         throw '当前设备路径与已核对的 A770 和 TH3P4G3 不符，先保持雷电线连接。'
     }
-    Assert-DockAccessories $dock.Node
+    Assert-DockAccessories $dock.Node -Report
 
     if ($arc.Problem -ne $heldForEject -or $arc.Started) {
         if (!$arc.Started -or $arc.Problem -ne 0 -or !$arc.Removable) {

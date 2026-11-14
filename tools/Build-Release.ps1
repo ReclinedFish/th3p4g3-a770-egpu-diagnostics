@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$')]
-    [string]$Version = '0.1.0',
+    [string]$Version = '0.2.0',
     [string]$OutputDirectory,
     [switch]$Force
 )
@@ -22,6 +22,8 @@ $checksumPath = "$archivePath.sha256"
 $files = [ordered]@{
     'README.md' = 'tools/README.md'
     'assets/hotplug-console.png' = 'assets/hotplug-console.png'
+    'assets/receiver-in-dock-usb-a.png' = 'assets/receiver-in-dock-usb-a.png'
+    'assets/receiver-in-dock-usb-a.prompt.md' = 'assets/receiver-in-dock-usb-a.prompt.md'
     "docs/release-v$Version.md" = "docs/release-v$Version.md"
     'tools/Build-Release.ps1' = 'tools/Build-Release.ps1'
     'tools/Dx11ArcBatched/Dx11ArcBatched.csproj' = 'tools/Dx11ArcBatched/Dx11ArcBatched.csproj'
