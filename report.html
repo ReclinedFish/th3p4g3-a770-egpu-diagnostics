@@ -1,19 +1,17 @@
-<!doctype html><html lang="zh-CN"><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TH3P4G3 外接 A770 掉线排查报告</title>
-<style>
-body{margin:0;background:#edf2f7;color:#203147;font:16px/1.85 "Microsoft YaHei",system-ui,sans-serif}
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TH3P4G3 外接 A770 掉线排查报告</title><style>
+body{margin:0;background:#edf2f7;color:#203147;font:16px/1.85 system-ui,"Microsoft YaHei",sans-serif}
 main{max-width:1000px;margin:35px auto;background:white;padding:48px 60px;border-radius:14px}
 h1{font-size:30px;line-height:1.4;color:#143c65}h2{margin-top:40px;font-size:23px;color:#174c70}
 p{margin:18px 0}img{max-width:100%;height:auto;display:block;margin:24px auto}
 a{color:#1765ae}table{width:100%;border-collapse:collapse;font-size:14px;line-height:1.6;margin:24px 0}
-th,td{text-align:left;padding:11px 13px;border-bottom:1px solid #dce5ed}th{background:#edf4f8}
-code{font-size:.9em;background:#eff3f7;padding:2px 5px;border-radius:4px}
-pre{padding:18px;background:#eff3f7;overflow:auto}pre code{padding:0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid #dce5ed;overflow-wrap:anywhere}th{background:#edf4f8}
+code{font-size:.9em;background:#eff3f7;padding:2px 5px;border-radius:4px;overflow-wrap:anywhere}
+pre{padding:18px;background:#eff3f7;overflow:auto}pre code{padding:0;overflow-wrap:normal}
 blockquote{margin:20px 0;border-left:4px solid #168478;background:#eef8f5;padding:12px 20px}
 @media(max-width:700px){main{padding:24px 18px;margin:0;border-radius:0}h1{font-size:25px}table{display:block;overflow:auto}}
 @media print{body{background:white}main{margin:0;padding:0;max-width:none}img,table,pre{break-inside:avoid}h2{break-after:avoid}a{color:inherit}}
-</style><main><h1>TH3P4G3 外接 A770 反复掉线排查与省电设置验证</h1>
+</style></head><body><main><h1>TH3P4G3 外接 A770 反复掉线排查与省电设置验证</h1>
+<p><strong>简体中文</strong> | <a href="report.en.html">English</a></p>
 <p>2026 年 11 月 13 日整理。测试时间使用 HST（UTC−10）。这是单机排障记录，包含有效的绕过方法和仍未解决的问题。</p>
 <p><strong>这台电脑上，取消显卡坞 USB Root Hub 的“允许计算机关闭此设备以节约电源”后，拔掉鼠标接收器也在后续观察窗口内保持了连接。原生 DX11 初始化时的 LiveKernelEvent 141 仍偶发，不能宣布显卡所有问题已解决。</strong></p>
 <h2>设备与最初症状</h2>
@@ -204,5 +202,5 @@ blockquote{margin:20px 0;border-left:4px solid #168478;background:#eef8f5;paddin
 <p><strong>可分享的成果是一个有对照数据支持的整坞掉线绕过方法，以及将整坞掉线与 DX11 超时分开验证的方法。</strong> 目前还不能宣称修复所有 141、排除电源或显卡硬件问题，或适用于全部 TH3P4G3。Intel 的官方文档也将 Arc eGPU 列为未正式支持的配置；这是适用范围说明，不是本机故障原因的证明。<a href="https://www.intel.com/content/www/us/en/support/articles/000098033/graphics.html">Intel eGPU 支持说明</a></p>
 <h2>数据与复用</h2>
 <p><a href="evidence.json">evidence.json</a> 提供从本地日志提取的实验时段、计数、长测与复制结果、传感器样本及来源文件 SHA-256。公开附件已去掉用户名、电脑名称、设备实例唯一后缀和 WER 报告唯一标识；原始事件 XML 与内存转储未打包。</p>
-<p><code>build_figures.py</code> 从这份摘要重建三张数据图和本地浏览版 <code>report.html</code>；拓扑图由 <code>build_topology.py</code> 生成。使用 Python、Matplotlib、Python-Markdown，并提供微软雅黑或 Noto Sans CJK SC 字体即可。脚本只读取本目录文件和生成图片，不查询或修改设备。</p>
-<p>本文中的测试程序参数足以解释比较口径，但本目录没有打包自定义 D3D11 测试程序、硬件绑定的弹出脚本或全部原始日志；独立复现精确跑分仍需要对应程序版本。验证掉线绕过时，应优先重现接收器／Hub 策略对照，而不是追求相同 dispatch 数。</p></main></html>
+<p><code>build_figures.py</code> 从这份摘要重建三张中文数据图；中文拓扑图由 <code>build_topology.py</code> 生成。<code>build_english.py</code> 生成四张英文配图，两种语言共用同一份数据。<code>render_reports.py</code> 可单独重建中文 <code>report.html</code> 和英文 <code>report.en.html</code>，两个数据绘图脚本也会调用它。使用 Python、Matplotlib、Python-Markdown；中文图需要微软雅黑或 Noto Sans CJK SC，英文图使用 DejaVu Sans。脚本只读取本目录文件和生成图片、HTML，不查询或修改设备。</p>
+<p>本文中的测试程序参数足以解释比较口径，但本目录没有打包自定义 D3D11 测试程序、硬件绑定的弹出脚本或全部原始日志；独立复现精确跑分仍需要对应程序版本。验证掉线绕过时，应优先重现接收器／Hub 策略对照，而不是追求相同 dispatch 数。</p></main></body></html>

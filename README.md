@@ -1,5 +1,7 @@
 # TH3P4G3 外接 A770 反复掉线排查与省电设置验证
 
+**简体中文** | [English](README.en.md)
+
 2026 年 11 月 13 日整理。测试时间使用 HST（UTC−10）。这是单机排障记录，包含有效的绕过方法和仍未解决的问题。
 
 **这台电脑上，取消显卡坞 USB Root Hub 的“允许计算机关闭此设备以节约电源”后，拔掉鼠标接收器也在后续观察窗口内保持了连接。原生 DX11 初始化时的 LiveKernelEvent 141 仍偶发，不能宣布显卡所有问题已解决。**
@@ -106,6 +108,6 @@ Microsoft 将 `0x141` 定义为显示引擎未及时响应的 live dump 标识�
 
 [evidence.json](evidence.json) 提供从本地日志提取的实验时段、计数、长测与复制结果、传感器样本及来源文件 SHA-256。公开附件已去掉用户名、电脑名称、设备实例唯一后缀和 WER 报告唯一标识；原始事件 XML 与内存转储未打包。
 
-`build_figures.py` 从这份摘要重建三张数据图和本地浏览版 `report.html`；拓扑图由 `build_topology.py` 生成。使用 Python、Matplotlib、Python-Markdown，并提供微软雅黑或 Noto Sans CJK SC 字体即可。脚本只读取本目录文件和生成图片，不查询或修改设备。
+`build_figures.py` 从这份摘要重建三张中文数据图；中文拓扑图由 `build_topology.py` 生成。`build_english.py` 生成四张英文配图，两种语言共用同一份数据。`render_reports.py` 可单独重建中文 `report.html` 和英文 `report.en.html`，两个数据绘图脚本也会调用它。使用 Python、Matplotlib、Python-Markdown；中文图需要微软雅黑或 Noto Sans CJK SC，英文图使用 DejaVu Sans。脚本只读取本目录文件和生成图片、HTML，不查询或修改设备。
 
 本文中的测试程序参数足以解释比较口径，但本目录没有打包自定义 D3D11 测试程序、硬件绑定的弹出脚本或全部原始日志；独立复现精确跑分仍需要对应程序版本。验证掉线绕过时，应优先重现接收器／Hub 策略对照，而不是追求相同 dispatch 数。

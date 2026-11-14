@@ -1,0 +1,236 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TH3P4G3 and Arc A770 disconnect investigation</title><style>
+body{margin:0;background:#edf2f7;color:#203147;font:16px/1.85 system-ui,"Microsoft YaHei",sans-serif}
+main{max-width:1000px;margin:35px auto;background:white;padding:48px 60px;border-radius:14px}
+h1{font-size:30px;line-height:1.4;color:#143c65}h2{margin-top:40px;font-size:23px;color:#174c70}
+p{margin:18px 0}img{max-width:100%;height:auto;display:block;margin:24px auto}
+a{color:#1765ae}table{width:100%;border-collapse:collapse;font-size:14px;line-height:1.6;margin:24px 0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid #dce5ed;overflow-wrap:anywhere}th{background:#edf4f8}
+code{font-size:.9em;background:#eff3f7;padding:2px 5px;border-radius:4px;overflow-wrap:anywhere}
+pre{padding:18px;background:#eff3f7;overflow:auto}pre code{padding:0;overflow-wrap:normal}
+blockquote{margin:20px 0;border-left:4px solid #168478;background:#eef8f5;padding:12px 20px}
+@media(max-width:700px){main{padding:24px 18px;margin:0;border-radius:0}h1{font-size:25px}table{display:block;overflow:auto}}
+@media print{body{background:white}main{margin:0;padding:0;max-width:none}img,table,pre{break-inside:avoid}h2{break-after:avoid}a{color:inherit}}
+</style></head><body><main><h1>TH3P4G3 and Intel Arc A770 disconnects and USB power management</h1>
+<p><a href="report.html">简体中文</a> | <strong>English</strong></p>
+<p>Prepared November 13, 2026. All test times use HST (UTC−10). This is a single-system troubleshooting record covering a working mitigation and a separate unresolved fault.</p>
+<p><strong>On this system, unchecking “Allow the computer to turn off this device to save power” for the dock's USB Root Hub kept the dock connected during the subsequent observation window, even with the mouse receiver unplugged. Intermittent LiveKernelEvent 141 failures during native DX11 initialization remain unresolved.</strong></p>
+<h2>Setup and symptoms</h2>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Test configuration</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Laptop</td>
+<td>ASUS ROG Strix G634JZ with an internal RTX 4080 Laptop GPU and Intel UHD Graphics</td>
+</tr>
+<tr>
+<td>External GPU</td>
+<td>Intel Arc A770 Limited Edition 16 GB, driver 32.0.101.9175</td>
+</tr>
+<tr>
+<td>Dock</td>
+<td>TH3P4G3. A GZOSMETA GPU-EG01M was also tested earlier; the power-management findings here concern the TH3P4G3.</td>
+</tr>
+<tr>
+<td>Power supply</td>
+<td>Thermaltake (TT) 650 W SFX, 80 PLUS Gold, shared between both docks; identification supplied by the owner</td>
+</tr>
+<tr>
+<td>OS</td>
+<td>Windows 11 Insider Preview. Build numbers were not fully archived for every phase, so these findings should not be generalized to all Windows versions.</td>
+</tr>
+<tr>
+<td>Controlled settings</td>
+<td>ReBAR disabled. Cable comparisons used the same driver and the dock's single-lightning-symbol port, with the receiver unplugged and Root Hub power saving disabled.</td>
+</tr>
+</tbody>
+</table>
+<p>The dock sometimes made a faint clicking sound, followed by repeated Windows USB connect/disconnect sounds. Logs confirmed removal of the dock and its downstream devices in some periods. A second failure mode involved DX11 initialization failing while the dock and GPU remained enumerated. These are counted separately.</p>
+<p><img alt="Hardware connections and separate fault paths" src="assets/en/topology.png" /></p>
+<p>Figure 1. Logical connections, not an electrical schematic. The USB branch's power policy and the A770's own power state are separate. The diagram does not establish a defective circuit or component.</p>
+<h2>Why the USB receiver mattered</h2>
+<p>Repeated disconnects became much less frequent after a USB mouse receiver was plugged into the dock. To investigate idle power management, the receiver was first removed and reinserted without changing policy. Only the dock's Root Hub policy was changed for the final phase.</p>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Receiver</th>
+<th>Hub power saving allowed</th>
+<th>Observed duration</th>
+<th>Dock removals</th>
+<th>New 141 reports</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>B</td>
+<td>Unplugged</td>
+<td>Yes</td>
+<td>161.3 s; stopped after two removals</td>
+<td>2</td>
+<td>0</td>
+</tr>
+<tr>
+<td>A2</td>
+<td>Reinserted</td>
+<td>Yes</td>
+<td>602.8 s</td>
+<td>0</td>
+<td>0</td>
+</tr>
+<tr>
+<td>C</td>
+<td>Unplugged again</td>
+<td>No</td>
+<td>901.0 s</td>
+<td>0</td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+<p>The xHCI controller's original policy was preserved throughout. Phase C readback showed Root Hub <code>Enable=False</code> and xHCI <code>Enable=True</code>, with no xHCI D3 completion events captured during that observation window. Here, <code>Enable=False</code> refers to the power-saving permission, <strong>not disabling the USB device itself</strong>.</p>
+<p><img alt="Receiver and Root Hub power-policy comparison" src="assets/en/power-policy-ab.png" /></p>
+<p><strong>These results support a link between idle power management in the dock's USB branch and removal of the entire dock.</strong> The receiver may have changed the conditions under which that branch entered a low-power state. The evidence does not isolate a particular driver, firmware component, or hardware interaction. D3 is a device low-power state; observing it is not, by itself, evidence of a disconnect. Windows USB selective suspend can suspend individual ports independently. This targeted Hub change is a workaround for this system, not a general recommendation to disable USB power saving globally. <a href="https://learn.microsoft.com/en-us/windows-hardware/drivers/usbcon/usb-selective-suspend">Microsoft USB selective suspend documentation</a></p>
+<p>The problem recurred on November 12: five dock removals were recorded between 10:43 and 10:53, and the Hub permission was found back at <code>True</code>. At 10:54:25 it was set to <code>False</code> again, while xHCI remained <code>True</code>. <strong>Recheck the actual policy after reconnection, device re-enumeration, or reboot.</strong> The available logs do not establish which action restored the default.</p>
+<h2>How to try the workaround and verify it</h2>
+<ol>
+<li>Open <strong>Device Manager → View → Devices by connection</strong>. Follow the Thunderbolt device tree to the USB xHCI controller inside the dock and its <strong>USB Root Hub</strong>. On this system, the controller's vendor/device ID was <code>8086:15F0</code>; do not select a device on another machine solely by a similar name.</li>
+<li>If needed, plug a receiver into the dock's USB port and inspect its parent chain to identify the correct Hub. The laptop's own USB Root Hub is not the target of this change.</li>
+<li>Open the target Hub's <strong>Properties → Power Management</strong> and uncheck <strong>Allow the computer to turn off this device to save power</strong>. Apply it, then reopen the properties to confirm it was saved. If the tab is absent, check the device tree and driver first rather than disabling devices in bulk.</li>
+<li>Unplug the receiver. Keep the cable, port, driver, and PSU unchanged. Observe idle behavior, run a workload, and continue observing after the workload exits. Change one variable at a time and record any manual unplug/replug times.</li>
+<li>Check the same Hub's setting again after reconnecting or rebooting. To revert this change, restore the original checkbox setting.</li>
+</ol>
+<p>The change took effect without a reboot in phase C. It restricts the system's ability to power down that Hub while idle. <strong>It does not force the A770 to remain in D0, and it does not prevent normal shutdown or safe ejection.</strong> Phase C did not depend on raising GPU power limits, enabling ReBAR, or changing the graphics driver.</p>
+<h2>Cable comparisons and the unresolved 141 failures</h2>
+<p>Matched runs used the same native D3D11 compute test, explicitly selecting the A770, Feature Level 11_0, 64 dispatches per batch, and a target duration of 300 seconds. Follow-up observation lasted roughly two minutes after the program exited, with three rounds of 128 MiB bidirectional copy verification where completed. Dispatch counts describe this program's workload; they are not game frames.</p>
+<table>
+<thead>
+<tr>
+<th>Cable, single-lightning-symbol port</th>
+<th>Recorded initialization outcomes</th>
+<th>Dispatches in the successful long run</th>
+<th>Host → GPU</th>
+<th>GPU → host</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Original Thunderbolt 4 cable #1</td>
+<td>One success</td>
+<td>2,163,136</td>
+<td>1.546 GiB/s</td>
+<td>2.342 GiB/s</td>
+</tr>
+<tr>
+<td>Belkin Thunderbolt 5 cable</td>
+<td>Failed, then passed on retry</td>
+<td>2,164,416</td>
+<td>1.544 GiB/s</td>
+<td>2.343 GiB/s</td>
+</tr>
+<tr>
+<td>Longer original cable #2</td>
+<td>One success</td>
+<td>2,169,344</td>
+<td>1.548 GiB/s</td>
+<td>2.346 GiB/s</td>
+</tr>
+<tr>
+<td>Braided cable</td>
+<td>Failed twice, then passed</td>
+<td>2,167,488</td>
+<td>1.547 GiB/s</td>
+<td>2.347 GiB/s</td>
+</tr>
+</tbody>
+</table>
+<p>Copy rates were calculated from each round's median GPU timestamp duration, then the median of the three rounds. They are not the Thunderbolt link's advertised bandwidth. Dispatch rates in the four completed runs differed by less than 0.3%. The small, non-randomized sample cannot rank cable failure rates or quantify performance loss relative to a desktop PCIe slot.</p>
+<p><img alt="Completed-run throughput and initialization outcomes by cable" src="assets/en/cable-comparison.png" /></p>
+<p>The braided cable's third run lasted 300.02 seconds and passed readback verification. Its 43 process-engine utilization samples averaged 96.47%. It was followed by about 158 seconds of idle observation and the copy tests. No new 141 or dock removal was recorded between 14:01:39 and 14:09:43 on November 12. Each of the two earlier initialization failures had a corresponding 141. Another report at 13:48 fell outside those three benchmark windows; the later successful run does not erase those failures.</p>
+<p>Separately, original cable #1 completed 300 seconds of load on the <strong>battery-plus-lightning-symbol port</strong>, but a 141 appeared about 64 seconds after the load ended. That run is excluded from the same-port comparison above. It shows why <strong>checking only the stress-test runtime can miss a fault after the program exits</strong>.</p>
+<p>Failed initialization commonly returned <code>DXGI_ERROR_DEVICE_REMOVED (0x887A0005)</code>. Multiple reports shared this signature:</p>
+<pre><code class="language-text">LKD_0x141_Tdr:6_IMAGE_igdkmdnd64.sys_GEN12_TRINITY11_GUC_SCHEDULER_ERROR
+</code></pre>
+<p>Microsoft defines <code>0x141</code> as a live-dump identifier indicating that a display engine did not respond in time. It does not establish that a graphics card is defective. Likewise, <code>DEVICE_REMOVED</code> here is not a substitute for evidence of device removal from the PnP tree. The signature points to Intel's graphics scheduling path, but does not by itself assign the root cause to software or hardware. <a href="https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/bug-check-0x141---video-engine-timeout-detected">Microsoft 0x141 documentation</a></p>
+<h2>Additional stability tests completed</h2>
+<table>
+<thead>
+<tr>
+<th>Test</th>
+<th>Observed result</th>
+<th>Scope</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>OCCT 3D Adaptive</td>
+<td>20 min 01 s; no detected errors, new disconnects, or 141 reports</td>
+<td>Earlier phase with the receiver connected, not a repeat under the later cable-test conditions</td>
+</tr>
+<tr>
+<td>OCCT VRAM</td>
+<td>15 min at 80%; about 12.47 GiB average dedicated memory use; no detected errors, new disconnects, or 141 reports</td>
+<td>Same earlier phase; supports stability within that test's coverage</td>
+</tr>
+<tr>
+<td>DX12 standby/wake</td>
+<td>Five cycles, each starting after recorded A770 D3 and running 30 s; all passed readback</td>
+<td>Receiver-connected phase; does not replace DX11 initialization testing</td>
+</tr>
+<tr>
+<td>Kryptex compute</td>
+<td>30 min; 144 device checks without faults, no new 141 or disconnects</td>
+<td>Separate supplemental capture; these files do not re-establish the cable and port used</td>
+</tr>
+</tbody>
+</table>
+<p><img alt="Temperature and board power during a 30-minute compute observation" src="assets/en/compute-30min.png" /></p>
+<p>The compute observation contained 348 sensor samples. Core temperature ranged from 71–72°C; board power averaged 189.29 W and ranged from 187–193 W. This demonstrates completion of that sustained workload. It does not rule out faults triggered only during initialization, idle, or workload transitions.</p>
+<h2>Reading the logs and limiting the conclusion</h2>
+<p>Monitoring covered PCI power transitions, Thunderbolt events, PnP removals, device presence, and Windows Error Reporting (WER). Counts follow these rules:</p>
+<ul>
+<li><strong>Dock disconnects:</strong> match PnP event 1010 to the target bridge and correlate it with presence changes for the dock, xHCI controller, and A770. Exclude manual cable changes and safe ejection.</li>
+<li><strong>GPU timeouts:</strong> filter WER for <code>EventName=LiveKernelEvent</code> and <code>P1=141</code>, deduplicate by <code>ReportId</code>, and correlate with the failure time in the dump or <code>Report.wer</code>.</li>
+<li><strong>D3 and RTD3:</strong> record which device transitioned and when. A power-transition event alone does not count as a physical disconnect.</li>
+<li><strong>Observation windows:</strong> separate initialization, load, and post-exit observation. The system clock had changed during earlier work, so UTC timestamps and event RecordIds were used where needed to establish ordering.</li>
+</ul>
+<p>For example, two WER records logged at 20:40 during the 30-minute compute observation referred to older failures at 05:26 and 05:38 that day. Matching report identities and <code>Report.wer</code> <code>EventTime</code> confirmed this; they were not counted as new 141 failures during that test.</p>
+<p><strong>The useful result is a dock-disconnect workaround supported by controlled observations, plus a method for separating dock removal from DX11 timeouts.</strong> These tests do not establish that all 141 failures are fixed, rule out PSU or GPU hardware faults, or guarantee the same behavior on every TH3P4G3. Intel also lists Arc eGPU configurations as not officially supported. That defines support scope; it does not diagnose this system's fault. <a href="https://www.intel.com/content/www/us/en/support/articles/000098033/graphics.html">Intel eGPU support statement</a></p>
+<h2>Data and reproduction</h2>
+<p><a href="evidence.json">evidence.json</a> contains extracted test windows, counts, long-run and copy results, sensor samples, and SHA-256 hashes of source files. Usernames, computer names, unique device-instance suffixes, and WER report identifiers have been removed from the published attachments. Raw event XML and memory dumps are not included. Original cable labels remain in the shared JSON; the English plotting script maps them to the English names shown above.</p>
+<p>The Chinese report and its figures remain available. The scripts read local report data and generate figures or HTML; they do not query or modify hardware.</p>
+<table>
+<thead>
+<tr>
+<th>Script</th>
+<th>Output</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>build_figures.py</code></td>
+<td>Chinese data figures and both HTML reports</td>
+</tr>
+<tr>
+<td><code>build_topology.py</code></td>
+<td>Chinese topology diagram</td>
+</tr>
+<tr>
+<td><code>build_english.py</code></td>
+<td>Four English figures in PNG/SVG and both HTML reports</td>
+</tr>
+<tr>
+<td><code>render_reports.py</code></td>
+<td>HTML only: <code>report.html</code> and <code>report.en.html</code></td>
+</tr>
+</tbody>
+</table>
+<p>Use Python with Matplotlib and Python-Markdown. English figures use DejaVu Sans; Chinese figures need Microsoft YaHei or Noto Sans CJK SC. To regenerate the English edition from the repository directory:</p>
+<pre><code class="language-bash">python -m pip install matplotlib Markdown
+python build_english.py
+</code></pre>
+<p>The custom D3D11 test program, hardware-specific ejection script, and complete raw logs are not bundled. Reproducing the exact benchmark counts requires the corresponding test-program version. To validate the disconnect workaround, prioritize the receiver/Hub-policy comparison rather than matching dispatch counts.</p></main></body></html>

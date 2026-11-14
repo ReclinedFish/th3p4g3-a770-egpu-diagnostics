@@ -1,7 +1,7 @@
 """Render the public, sanitized evidence. Requires matplotlib and Python-Markdown.
 
 Run from any directory: python build_figures.py
-Uses only evidence.json and README.md in this directory; no device access.
+Uses only local evidence and report files; no device access.
 """
 from pathlib import Path
 from datetime import datetime
@@ -11,7 +11,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import font_manager
-import markdown
+from render_reports import render_reports
 
 BASE = Path(__file__).resolve().parent
 DATA = json.loads((BASE / "evidence.json").read_text(encoding="utf-8"))
@@ -125,24 +125,5 @@ fig.tight_layout(rect=(0, .03, 1, .95))
 save(fig, "compute-30min")
 
 
-readme = BASE / "README.md"
-if readme.exists():
-    body = markdown.markdown(readme.read_text(encoding="utf-8"), extensions=["tables", "fenced_code"])
-    html = """<!doctype html><html lang="zh-CN"><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TH3P4G3 外接 A770 掉线排查报告</title>
-<style>
-body{margin:0;background:#edf2f7;color:#203147;font:16px/1.85 "Microsoft YaHei",system-ui,sans-serif}
-main{max-width:1000px;margin:35px auto;background:white;padding:48px 60px;border-radius:14px}
-h1{font-size:30px;line-height:1.4;color:#143c65}h2{margin-top:40px;font-size:23px;color:#174c70}
-p{margin:18px 0}img{max-width:100%;height:auto;display:block;margin:24px auto}
-a{color:#1765ae}table{width:100%;border-collapse:collapse;font-size:14px;line-height:1.6;margin:24px 0}
-th,td{text-align:left;padding:11px 13px;border-bottom:1px solid #dce5ed}th{background:#edf4f8}
-code{font-size:.9em;background:#eff3f7;padding:2px 5px;border-radius:4px}
-pre{padding:18px;background:#eff3f7;overflow:auto}pre code{padding:0}
-blockquote{margin:20px 0;border-left:4px solid #168478;background:#eef8f5;padding:12px 20px}
-@media(max-width:700px){main{padding:24px 18px;margin:0;border-radius:0}h1{font-size:25px}table{display:block;overflow:auto}}
-@media print{body{background:white}main{margin:0;padding:0;max-width:none}img,table,pre{break-inside:avoid}h2{break-after:avoid}a{color:inherit}}
-</style><main>""" + body + "</main></html>"
-    (BASE / "report.html").write_text(html, encoding="utf-8")
-print("Rendered figures and local HTML in", BASE)
+render_reports()
+print("Rendered Chinese figures and both HTML reports in", BASE)
