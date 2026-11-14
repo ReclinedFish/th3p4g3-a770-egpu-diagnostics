@@ -1,4 +1,4 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 [CmdletBinding()]
 param(
     [string]$ConfigPath = (Join-Path $PSScriptRoot 'eGPU-Hotplug.local.json'),
@@ -14,7 +14,10 @@ $exe = Join-Path $PSScriptRoot 'Dx11ArcBatched\bin\Release\net10.0\Dx11ArcBatche
 if (!(Test-Path -LiteralPath $exe -PathType Leaf)) {
     throw 'Build Dx11ArcBatched in Release mode with the .NET 10 SDK before running this script.'
 }
-. (Join-Path $PSScriptRoot 'eGPU-Hotplug.ps1') -Action Status -ConfigPath $ConfigPath
+$hotplugOptions = @{ Action = 'Status' }
+if ($PSBoundParameters.ContainsKey('ConfigPath')) { $hotplugOptions.ConfigPath = $ConfigPath }
+. (Join-Path $PSScriptRoot 'eGPU-Hotplug.ps1') @hotplugOptions
+if (!$arcId) { throw 'Connect the Arc A770 and let Windows enumerate the dock before running this test.' }
 $start=[DateTimeOffset]::Now
 $folder=Join-Path ([IO.Path]::GetFullPath($OutputDirectory)) ('A770-DX11-Wake-' + $start.ToString('yyyyMMdd-HHmmss-fff'))
 $watchDuration = $BaselineSeconds + $RetestCount * ($IdleSeconds + $RetestSeconds + 55) + $IdleSeconds + 90

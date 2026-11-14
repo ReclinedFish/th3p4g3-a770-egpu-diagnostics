@@ -4,20 +4,38 @@
 
 [直接看：设备管理器关闭省电的截图步骤](#device-manager-guide)
 
-## 热拔插脚本与 DX11 唤醒复测
+## 下载与热拔插工具
 
-[热拔插工具](tools/eGPU-Hotplug.cmd)适用于 Windows 上的 TH3P4G3 + Arc A770。需要 PowerShell 7。从 [配置模板](tools/eGPU-Hotplug.example.json) 复制一份 `tools/eGPU-Hotplug.local.json`。在设备管理器选「查看 → 按连接列出设备」，再从各设备的「属性 → 详细信息 → 设备实例路径」填入 A770、坞的上游桥、坞内 USB 根集线器和下游雷电扩展口。上下游桥可能有相同的 PCI 硬件 ID，请按设备树的父子关系区分。可选的 USB 白名单默认留空。配置仅供本机使用。
+[下载最新 Release](https://github.com/ReclinedFish/th3p4g3-a770-egpu-diagnostics/releases/latest) · [工具使用说明](tools/README.md) · [原生 DX11 唤醒复测](docs/dx11-wake.md)
 
-在仓库根目录先预演，然后用菜单执行弹出。选 **1** 会尝试关闭占用 A770 的应用。如果有应用等待保存，先保存并关闭再重试。看见 Windows 确认 **代码 47** 后拔线，重新插入后选 **2** 检查驱动和设备状态。
+Windows 需要 **PowerShell 7**。解压 Release ZIP 后双击 `tools/eGPU-Hotplug.cmd`。工具会从当前设备树识别 A770、显卡坞上游桥、USB 根集线器与下游扩展端口，支持本仓库验证过的 TH3P4G3 拓扑，通常无需手填设备实例路径。识别不唯一、设备未连接或拓扑不符时不会猜选弹出目标；仍可用[配置模板](tools/eGPU-Hotplug.example.json)建立本机配置，详见工具说明。
+
+选 **1** 会尝试关闭占用 A770 的应用；如果应用等待保存，先保存并关闭再重试。**只有看到 Windows 确认代码 47 才拔雷电线。** 重新插入后选 **2**，工具确认设备连续就绪 5 秒及 A770 代码 0；选 **3** 查看状态。
 
 ```powershell
+# 从解压后的目录先只读检查，再预演弹出：
+.\tools\eGPU-Hotplug.cmd -Action Status
 .\tools\eGPU-Hotplug.cmd -Action Eject -WhatIf
-.\tools\eGPU-Hotplug.cmd
 ```
 
-[原生 DX11 唤醒复测结果与复现步骤](docs/dx11-wake.md)。这次首轮 5 分钟和闲置后的 3 次重启均通过，观察窗口内未记录新的 141 或雷电掉线。
+![热拔插工具实际运行：代码 47 后拔线，插回后代码 0](assets/hotplug-console.png)
 
-工具源码采用 [MIT 许可证](tools/LICENSE)。
+用户提供的本机实际运行截图，展示此前版本成功弹出和重新识别的过程。它是界面与操作顺序示例；自动识别版的新增验证范围见 [v0.1.0 发布说明](docs/release-v0.1.0.md)。截图不含用户名或设备实例唯一后缀。
+
+首次发布提供 ZIP 和 SHA-256 校验文件。这个工具按 [GitHub Releases](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases) 分发；[GitHub Packages](https://docs.github.com/en/packages/learn-github-packages/introduction-to-github-packages) 面向 npm、NuGet、容器等包管理器，本工具无需另建包注册表。工具源码采用 [MIT 许可证](tools/LICENSE)。
+
+最近的 DX11 复测首轮 5 分钟和闲置后的 3 次重启均通过，观察窗口内未记录新的 141 或雷电掉线；这不代表此前间歇性问题已根治。
+
+## 最容易尝试的整坞掉线绕过方法
+
+**把一个 USB 无线鼠标接收器插在显卡坞自身的 USB-A 口并保持连接。** 在本机原省电策略下，它使整坞反复通断在约 10 分钟观察窗口内停止。这里指配套的 USB 接收器，不是插在笔记本上，也不是只打开蓝牙鼠标。已有接收器即可用于对照，不需要购买某个指定品牌。
+
+它是针对整坞空闲掉线的低门槛尝试，**不能保证修复 DX11 初始化失败或 LiveKernelEvent 141**。[接收器配图、网页来源、实测对照和复核方法](docs/usb-receiver-workaround.md)。不想长期占用 USB 口，可以按下方设备管理器步骤，仅取消显卡坞 Root Hub 的省电权限。
+
+
+[![USB 鼠标接收器外观示例](https://upload.wikimedia.org/wikipedia/commons/7/7d/Logitech_unifying_receiver.jpg)](docs/usb-receiver-workaround.md)
+
+配图：MiNe（sfmine79），[Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Logitech_unifying_receiver.jpg)，[CC BY 2.0](https://creativecommons.org/licenses/by/2.0/)，未修改；仅作外观示例，不代表本机测试型号。
 
 2026 年 11 月 13 日整理。测试时间使用 HST（UTC−10）。这是单机排障记录，包含有效的绕过方法和仍未解决的问题。
 

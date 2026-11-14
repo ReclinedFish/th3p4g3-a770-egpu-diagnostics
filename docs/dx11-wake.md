@@ -17,7 +17,7 @@ Kryptex 全程关闭。每轮启动前通过 Windows 的 `DEVPKEY_Device_PowerDa
 
 这是单机测试，复测时的线材和端口未记录。之前观察到的间歇性 DX11 初始化失败在这四轮里没有复现，故障原因仍待确定。
 
-在 Windows 上安装 .NET 10 SDK 和 PowerShell 7。先按[主报告](../README.md)配置本机设备实例路径，连接 A770 并退出 Kryptex。从仓库根目录执行：
+在 Windows 上安装 .NET 10 SDK 和 PowerShell 7。先连接 A770 并退出 Kryptex，按[主报告](../README.md)确认工具自动识别成功；需要手动覆盖时才填写本机配置。从仓库根目录执行：
 
 ```powershell
 dotnet build .\tools\Dx11ArcBatched\Dx11ArcBatched.csproj -c Release

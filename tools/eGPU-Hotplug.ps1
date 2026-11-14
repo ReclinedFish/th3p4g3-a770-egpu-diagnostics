@@ -1,4 +1,4 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [ValidateSet('Menu', 'Status', 'Eject', 'WaitForConnect')]
@@ -15,47 +15,51 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# Instance paths contain machine-specific identifiers. Keep the configuration local.
-if (!(Test-Path -LiteralPath $ConfigPath -PathType Leaf)) {
-    throw '未找到本机配置。请复制 eGPU-Hotplug.example.json 为 eGPU-Hotplug.local.json，按 README 填写设备实例路径。'
+# A local configuration is an explicit override. Without it, discover the live tree.
+$manualConfig = $null
+$hasLocalConfig = Test-Path -LiteralPath $ConfigPath -PathType Leaf
+if (!$hasLocalConfig -and $PSBoundParameters.ContainsKey('ConfigPath')) {
+    throw '指定的本机配置不存在。请检查 -ConfigPath；省略此参数可自动识别在线设备。'
 }
-try {
-    $config = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json -AsHashtable
-} catch {
-    throw '本机配置无法读取，或不是有效的 JSON。请参照 eGPU-Hotplug.example.json。'
-}
-if ($config -isnot [System.Collections.IDictionary]) {
-    throw '本机配置必须是 JSON 对象。'
-}
-$patterns = [ordered]@{
-    DockInstanceId           = '^PCI\\VEN_8086&DEV_15EF(?:&[A-Z0-9_]+)*\\[A-Z0-9&_.-]+$'
-    GpuInstanceId            = '^PCI\\VEN_8086&DEV_56A0(?:&[A-Z0-9_]+)*\\[A-Z0-9&_.-]+$'
-    UsbHubInstanceId         = '^USB\\ROOT_HUB30\\[A-Z0-9&_.-]+$'
-    DownstreamPortInstanceId = '^PCI\\VEN_8086&DEV_15EF(?:&[A-Z0-9_]+)*\\[A-Z0-9&_.-]+$'
-}
-foreach ($key in $patterns.Keys) {
-    if ($config[$key] -isnot [string] -or $config[$key] -notmatch $patterns[$key]) {
-        throw "本机配置的 $key 必须填入设备管理器中的完整实例路径。"
+if ($hasLocalConfig) {
+    try {
+        $manualConfig = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json -AsHashtable
+    } catch {
+        throw '本机配置无法读取，或不是有效的 JSON。请参照 eGPU-Hotplug.example.json。'
+    }
+    if ($manualConfig -isnot [System.Collections.IDictionary]) {
+        throw '本机配置必须是 JSON 对象。'
+    }
+    $patterns = [ordered]@{
+        DockInstanceId           = '^PCI\\VEN_8086&DEV_15EF(?:&[A-Z0-9_]+)*\\[A-Z0-9&_.-]+$'
+        GpuInstanceId            = '^PCI\\VEN_8086&DEV_56A0(?:&[A-Z0-9_]+)*\\[A-Z0-9&_.-]+$'
+        UsbHubInstanceId         = '^USB\\ROOT_HUB30\\[A-Z0-9&_.-]+$'
+        DownstreamPortInstanceId = '^PCI\\VEN_8086&DEV_15EF(?:&[A-Z0-9_]+)*\\[A-Z0-9&_.-]+$'
+    }
+    foreach ($key in $patterns.Keys) {
+        if ($manualConfig[$key] -isnot [string] -or $manualConfig[$key] -notmatch $patterns[$key]) {
+            throw "本机配置的 $key 必须填入设备管理器中的完整实例路径。"
+        }
+    }
+    if ($manualConfig.DockInstanceId -eq $manualConfig.DownstreamPortInstanceId) {
+        throw '显卡坞上游桥与下游扩展端口必须是两个设备实例。'
     }
 }
-$dockId = $config.DockInstanceId
-$arcId = $config.GpuInstanceId
-$hubId = $config.UsbHubInstanceId
-$extraPortId = $config.DownstreamPortInstanceId
-if ($dockId -eq $extraPortId) {
-    throw '显卡坞上游桥与下游扩展端口必须是两个设备实例。'
-}
+$dockId = $null
+$arcId = $null
+$hubId = $null
+$extraPortId = $null
 $allowedUsbIds = @()
-if ($config.Contains('AllowedUsbInstanceIds')) {
-    if ($config.AllowedUsbInstanceIds -isnot [array]) {
+if ($manualConfig -and $manualConfig.Contains('AllowedUsbInstanceIds')) {
+    if ($manualConfig.AllowedUsbInstanceIds -isnot [array]) {
         throw 'AllowedUsbInstanceIds 必须为 JSON 字符串数组。'
     }
-    foreach ($id in $config.AllowedUsbInstanceIds) {
+    foreach ($id in $manualConfig.AllowedUsbInstanceIds) {
         if ($id -isnot [string] -or $id -notmatch '^USB\\VID_[0-9A-F]{4}&PID_[0-9A-F]{4}(?:&[A-Z0-9_]+)*\\[A-Z0-9&_.-]+$') {
             throw 'AllowedUsbInstanceIds 中的每项必须是 USB 设备的完整实例路径。'
         }
     }
-    $allowedUsbIds = $config.AllowedUsbInstanceIds
+    $allowedUsbIds = $manualConfig.AllowedUsbInstanceIds
 }
 $noSuchDevNode = 0x0D
 $startedFlag = 0x08
@@ -78,6 +82,12 @@ namespace EgpuHotplug
 
     public static class ConfigManager
     {
+        [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        public static extern uint CM_Get_Device_ID_List_SizeW(out uint length, string filter, uint flags);
+
+        [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        public static extern uint CM_Get_Device_ID_ListW(string filter, [Out] char[] buffer, uint length, uint flags);
+
         [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
         public static extern uint CM_Locate_DevNodeW(out uint device, string instanceId, uint flags);
 
@@ -176,6 +186,127 @@ function Get-ChildInstanceIds([uint32]$Node) {
     if ($result -ne $noSuchDevNode) { throw '无法检查坞上的外接设备，请等设备稳定后重试。' }
 }
 
+function Get-PresentA770InstanceIds {
+    # CM_GETIDLIST_FILTER_ENUMERATOR | CM_GETIDLIST_FILTER_PRESENT, without WMI polling.
+    for ($attempt = 0; $attempt -lt 3; $attempt++) {
+        [uint32]$length = 0
+        $result = [EgpuHotplug.ConfigManager]::CM_Get_Device_ID_List_SizeW([ref]$length, 'PCI', 0x101)
+        if ($result -ne 0) { throw '无法枚举在线 PCI 设备，请等 Windows 完成设备识别后重试。' }
+        $buffer = [char[]]::new([Math]::Max(2, $length))
+        $result = [EgpuHotplug.ConfigManager]::CM_Get_Device_ID_ListW('PCI', $buffer, $buffer.Length, 0x101)
+        if ($result -eq 0) {
+            return @(($buffer -join '') -split "`0" | Where-Object {
+                $_ -match '^PCI\\VEN_8086&DEV_56A0(?:&|\\)'
+            } | Sort-Object -Unique)
+        }
+        if ($result -ne 0x1A) { break } # CR_BUFFER_SMALL: retry if enumeration changed.
+    }
+    throw 'PCI 设备列表在识别期间发生变化，请等设备稳定后重试。'
+}
+
+function Get-ParentInstanceId([string]$InstanceId) {
+    $state = Get-DeviceState $InstanceId
+    if (!$state.Present) { throw '设备在自动识别期间离线，请等设备稳定后重试。' }
+    [uint32]$parent = 0
+    $result = [EgpuHotplug.ConfigManager]::CM_Get_Parent([ref]$parent, $state.Node, 0)
+    if ($result -eq $noSuchDevNode) { return $null }
+    if ($result -ne 0) { throw '无法读取设备的上游连接，请等设备稳定后重试。' }
+    $name = [Text.StringBuilder]::new(512)
+    $result = [EgpuHotplug.ConfigManager]::CM_Get_Device_IDW($parent, $name, $name.Capacity, 0)
+    if ($result -ne 0) { throw '无法识别设备的上游连接，请等设备稳定后重试。' }
+    return $name.ToString()
+}
+
+function Get-ImmediateInstanceIds([string]$InstanceId) {
+    $state = Get-DeviceState $InstanceId
+    if (!$state.Present) { throw '设备在自动识别期间离线，请等设备稳定后重试。' }
+    return @(Get-ChildInstanceIds $state.Node)
+}
+
+function Test-KnownGpuBranch([string]$BranchId, [string]$ExpectedGpuId) {
+    # A770's onboard PCIe switch: 4FA0 -> two 4FA4 ports -> GPU 56A0 / audio 4F90.
+    # Do not accept an arbitrary bridge or a sibling device on the cable being removed.
+    $switches = @(Get-ImmediateInstanceIds $BranchId)
+    if ($switches.Count -ne 1 -or $switches[0] -notmatch '^PCI\\VEN_8086&DEV_4FA0(?:&|\\)') { return $false }
+    $ports = @(Get-ImmediateInstanceIds $switches[0])
+    if ($ports.Count -ne 2 -or @($ports | Where-Object {
+        $_ -notmatch '^PCI\\VEN_8086&DEV_4FA4(?:&|\\)'
+    }).Count) { return $false }
+    $endpoints = @()
+    foreach ($port in $ports) {
+        $devices = @(Get-ImmediateInstanceIds $port)
+        if ($devices.Count -ne 1) { return $false }
+        $endpoints += $devices[0]
+    }
+    $audio = @($endpoints | Where-Object { $_ -match '^PCI\\VEN_8086&DEV_4F90(?:&|\\)' })
+    return $endpoints.Count -eq 2 -and $ExpectedGpuId -in $endpoints -and $audio.Count -eq 1
+}
+
+function Test-KnownUsbBranch([string]$BranchId, [string]$ExpectedHubId) {
+    $controllers = @(Get-ImmediateInstanceIds $BranchId)
+    if ($controllers.Count -ne 1 -or $controllers[0] -notmatch '^PCI\\VEN_8086&DEV_15F0(?:&|\\)') { return $false }
+    $hubs = @(Get-ImmediateInstanceIds $controllers[0])
+    return $hubs.Count -eq 1 -and $hubs[0] -eq $ExpectedHubId -and $ExpectedHubId -match '^USB\\ROOT_HUB30\\'
+}
+
+function Get-AutomaticConfiguration {
+    $gpus = @(Get-PresentA770InstanceIds)
+    if ($gpus.Count -eq 0) { return $null }
+    if ($gpus.Count -ne 1) {
+        throw '检测到多张在线 A770，无法自动选择。请用本机配置指定目标显卡坞。'
+    }
+    $chain = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $current = $gpus[0]
+    for ($depth = 0; $current -and $depth -lt 32; $depth++) {
+        if (!$chain.Add($current)) { throw '检测到不完整的设备父子关系，无法自动选择显卡坞。' }
+        $current = Get-ParentInstanceId $current
+    }
+    if ($current) { throw '设备层级超过自动识别范围，请使用本机配置。' }
+    $dockMatches = [Collections.Generic.List[object]]::new()
+    foreach ($ancestor in $chain) {
+        if ($ancestor -notmatch '^PCI\\VEN_8086&DEV_15EF(?:&|\\)') { continue }
+        $branches = @(Get-ImmediateInstanceIds $ancestor)
+        # Known TH3P4G3 topology: three Intel 15EF branches, GPU / USB / spare TB port.
+        if ($branches.Count -ne 3 -or @($branches | Where-Object {
+            $_ -notmatch '^PCI\\VEN_8086&DEV_15EF(?:&|\\)'
+        }).Count) { continue }
+        $gpuBranches = @($branches | Where-Object { $chain.Contains($_) })
+        if ($gpuBranches.Count -ne 1 -or !(Test-KnownGpuBranch $gpuBranches[0] $gpus[0])) { continue }
+        $usbMatches = @()
+        foreach ($branch in $branches | Where-Object { $_ -ne $gpuBranches[0] }) {
+            $controllers = @(Get-ImmediateInstanceIds $branch)
+            if ($controllers.Count -ne 1 -or $controllers[0] -notmatch '^PCI\\VEN_8086&DEV_15F0(?:&|\\)') { continue }
+            $hubs = @(Get-ImmediateInstanceIds $controllers[0])
+            if ($hubs.Count -ne 1 -or $hubs[0] -notmatch '^USB\\ROOT_HUB30\\') { continue }
+            $usbMatches += [pscustomobject]@{ Branch = $branch; Hub = $hubs[0] }
+        }
+        if ($usbMatches.Count -ne 1) { continue }
+        $spare = @($branches | Where-Object { $_ -ne $gpuBranches[0] -and $_ -ne $usbMatches[0].Branch })
+        if ($spare.Count -ne 1) { continue }
+        $dockMatches.Add(@{
+            DockInstanceId = $ancestor
+            GpuInstanceId = $gpus[0]
+            UsbHubInstanceId = $usbMatches[0].Hub
+            DownstreamPortInstanceId = $spare[0]
+        })
+    }
+    if ($dockMatches.Count -ne 1) {
+        throw '找到 A770，但无法唯一核对 TH3P4G3 的 GPU、USB 和下游端口拓扑。请等设备稳定后重试，或使用本机配置。'
+    }
+    return $dockMatches[0]
+}
+
+function Update-DeviceSelection {
+    $selection = $manualConfig
+    if (!$selection) { $selection = Get-AutomaticConfiguration }
+    if (!$selection) { return $false }
+    $script:dockId = $selection.DockInstanceId
+    $script:arcId = $selection.GpuInstanceId
+    $script:hubId = $selection.UsbHubInstanceId
+    $script:extraPortId = $selection.DownstreamPortInstanceId
+    return $true
+}
+
 function Assert-DockAccessories([uint32]$DockNode) {
     $hub = Get-DeviceState $hubId
     $port = Get-DeviceState $extraPortId
@@ -187,6 +318,16 @@ function Assert-DockAccessories([uint32]$DockNode) {
     $branches = @(Get-ChildInstanceIds $DockNode)
     if ($branches.Count -ne 3 -or $extraPortId -notin $branches) {
         throw '显卡坞的 PCIe 分支与预期不符，先保持雷电线连接。'
+    }
+    $arc = Get-DeviceState $arcId
+    $gpuBranches = @($branches | Where-Object {
+        $branchState = Get-DeviceState $_
+        $branchState.Present -and $arc.Present -and (Test-UnderDock $arc.Node $branchState.Node)
+    })
+    $usbBranches = @($branches | Where-Object { $_ -ne $extraPortId -and $_ -notin $gpuBranches })
+    if ($gpuBranches.Count -ne 1 -or $usbBranches.Count -ne 1 -or
+        !(Test-KnownGpuBranch $gpuBranches[0] $arcId) -or !(Test-KnownUsbBranch $usbBranches[0] $hubId)) {
+        throw '显卡坞的 GPU 或 USB 分支含有未核对的设备，先保持雷电线连接。'
     }
     $otherUsb = @(Get-ChildInstanceIds $hub.Node | Where-Object { $_ -notin $allowedUsbIds })
     $otherThunderbolt = @(Get-ChildInstanceIds $port.Node)
@@ -379,6 +520,14 @@ function Stop-ArcApplications($Targets) {
 }
 
 function Show-Status {
+    $selected = Update-DeviceSelection
+    if (!$selected -and !$arcId) {
+        Write-Host '当前未检测到在线 A770，无法自动定位显卡坞。插回雷电线后选择 2。'
+        return
+    }
+    if ($manualConfig) { Write-Host '设备选择：本机配置。' }
+    elseif ($selected) { Write-Host '已自动识别 A770 和 TH3P4G3 设备路径（仅保留在本次运行内存中）。' }
+    else { Write-Host '当前未检测到在线 A770；以下为本次运行上次识别到的设备状态。' }
     $dock = Get-DeviceState $dockId
     $arc = Get-DeviceState $arcId
     $hub = Get-DeviceState $hubId
@@ -395,6 +544,9 @@ function Show-Status {
 }
 
 function Invoke-ArcEject {
+    if (!(Update-DeviceSelection)) {
+        throw '当前未检测到在线 A770，无法确认安全弹出。请保持雷电线连接并重试。'
+    }
     $dock = Get-DeviceState $dockId
     $arc = Get-DeviceState $arcId
     if (!$dock.Started -or $dock.Problem -ne 0 -or !$arc.Present -or
@@ -468,13 +620,30 @@ function Wait-ArcConnection {
     Write-Host "等待 Windows 启动显卡坞和 A770，最多 $TimeoutSeconds 秒……"
     $timer = [Diagnostics.Stopwatch]::StartNew()
     $readySince = $null
+    $lastDiscoveryError = $null
+    $previousSelection = $null
     do {
-        $dock = Get-DeviceState $dockId
-        $arc = Get-DeviceState $arcId
-        $hub = Get-DeviceState $hubId
-        if ($dock.Started -and $dock.Problem -eq 0 -and $arc.Started -and $arc.Problem -eq 0 -and
-            $hub.Started -and $hub.Problem -eq 0 -and (Test-UnderDock $arc.Node $dock.Node) -and
-            (Test-UnderDock $hub.Node $dock.Node)) {
+        $ready = $false
+        try {
+            $selected = Update-DeviceSelection
+            if ($selected) {
+                $selectionKey = "$dockId|$arcId|$hubId|$extraPortId"
+                if ($selectionKey -ne $previousSelection) { $readySince = $null }
+                $previousSelection = $selectionKey
+                $dock = Get-DeviceState $dockId
+                $arc = Get-DeviceState $arcId
+                $hub = Get-DeviceState $hubId
+                $ready = $dock.Started -and $dock.Problem -eq 0 -and $arc.Started -and $arc.Problem -eq 0 -and
+                    $hub.Started -and $hub.Problem -eq 0 -and (Test-UnderDock $arc.Node $dock.Node) -and
+                    (Test-UnderDock $hub.Node $dock.Node)
+            }
+            $lastDiscoveryError = $null
+        } catch {
+            # Hotplug can invalidate a devnode between locating it and reading its status.
+            $ready = $false
+            $lastDiscoveryError = $_.Exception.Message
+        }
+        if ($ready) {
             if ($null -eq $readySince) { $readySince = $timer.Elapsed.TotalSeconds }
             if ($timer.Elapsed.TotalSeconds - $readySince -ge 5) {
                 Write-Host '显卡坞和 A770 已连续就绪 5 秒。Windows 已启动 A770 驱动，设备代码为 0。' -ForegroundColor Green
@@ -485,7 +654,8 @@ function Wait-ArcConnection {
         }
         Start-Sleep -Milliseconds 250
     } while ($timer.Elapsed.TotalSeconds -lt $TimeoutSeconds)
-    Show-Status
+    if ($lastDiscoveryError) { Write-Host $lastDiscoveryError -ForegroundColor Yellow }
+    else { Show-Status }
     throw '未确认 A770 连续就绪。'
 }
 

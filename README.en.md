@@ -4,20 +4,38 @@
 
 [Jump to the Device Manager screenshot guide](#device-manager-guide)
 
-## Hot-plug script and DX11 wake-up retest
+## Download and hot-plug tool
 
-The [hot-plug tool](tools/eGPU-Hotplug.cmd) targets a TH3P4G3 with an Arc A770 on Windows and requires PowerShell 7. Copy the [configuration template](tools/eGPU-Hotplug.example.json) to `tools/eGPU-Hotplug.local.json`. In Device Manager, select **View → Devices by connection**, then use **Properties → Details → Device instance path** to fill in the A770, dock upstream bridge, dock USB root hub, and downstream Thunderbolt expansion port. The bridge hardware IDs can be identical, so use their positions in the device tree. Leave the optional USB allowlist empty by default. Keep the configuration local.
+[Download the latest release](https://github.com/ReclinedFish/th3p4g3-a770-egpu-diagnostics/releases/latest) · [Tool quick start](tools/README.md) · [Native DX11 wake-up retest](docs/dx11-wake.en.md)
 
-From the repository root, preview the eject and then open the menu. Option **1** tries to close applications using the A770 before ejecting. If an application prompts you to save work, save and close it before retrying. Unplug after Windows confirms **code 47**. After reconnecting, choose **2** to check that the driver and devices are ready.
+Windows requires **PowerShell 7**. Extract the release ZIP and double-click `tools/eGPU-Hotplug.cmd`. The tool discovers the A770, dock upstream bridge, USB root hub, and downstream expansion port from the current device tree. It supports the TH3P4G3 topology validated in this repository, so manual instance paths are normally unnecessary. It will not guess an eject target when discovery is ambiguous, the device is disconnected, or the topology does not match. A local override based on the [configuration template](tools/eGPU-Hotplug.example.json) remains available; see the tool guide.
+
+Option **1** attempts to close applications using the A770. Save and close an application if it is waiting for input. **Unplug the Thunderbolt cable only after Windows confirms code 47.** After reconnecting, choose **2** to require five seconds of continuous readiness and A770 code 0. Option **3** shows status.
 
 ```powershell
+# From the extracted directory, inspect status and preview the eject first:
+.\tools\eGPU-Hotplug.cmd -Action Status
 .\tools\eGPU-Hotplug.cmd -Action Eject -WhatIf
-.\tools\eGPU-Hotplug.cmd
 ```
 
-[Native DX11 wake-up results and reproduction steps](docs/dx11-wake.en.md). The five-minute run and three post-idle launches passed, with no new 141 or Thunderbolt disconnect recorded during the observation window.
+![Actual hot-plug console: code 47 before unplugging and code 0 after reconnecting](assets/hotplug-console.png)
 
-The tool source code is available under the [MIT License](tools/LICENSE).
+User-supplied screenshot from this system, showing a successful eject and reconnection with the earlier tool version. It illustrates the interface and sequence. See the [v0.1.0 release notes](docs/release-v0.1.0.md) for the validation scope of automatic discovery. The screenshot contains no username or unique device-instance suffix.
+
+The first release includes a ZIP and SHA-256 checksums. This tool is distributed through [GitHub Releases](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases). [GitHub Packages](https://docs.github.com/en/packages/learn-github-packages/introduction-to-github-packages) serves package managers such as npm, NuGet, and container clients; this script does not need a separate registry package. Tool source code is under the [MIT License](tools/LICENSE).
+
+The latest DX11 retest passed a five-minute run and three post-idle launches, without a new 141 or Thunderbolt disconnect in that observation window. It does not establish a permanent fix for earlier intermittent failures.
+
+## A simple workaround to try for whole-dock disconnects
+
+**Keep a USB wireless mouse receiver connected to the dock's own USB-A port.** With this system's original power policy, repeated whole-dock disconnects stopped during a roughly ten-minute observation window. This means the paired USB receiver on the dock, rather than a receiver on the laptop or a Bluetooth-only mouse. An existing receiver is sufficient for a comparison; no particular brand is required.
+
+This is a simple trial for whole-dock idle disconnects, **not a guaranteed fix for DX11 initialization failures or LiveKernelEvent 141**. See the [receiver photo, web sources, measured comparison, and verification steps](docs/usb-receiver-workaround.en.md). To avoid occupying a USB port, the Device Manager guide below documents an alternative: remove the power-off permission only for the dock's USB Root Hub.
+
+
+[![Example USB wireless mouse receiver](https://upload.wikimedia.org/wikipedia/commons/7/7d/Logitech_unifying_receiver.jpg)](docs/usb-receiver-workaround.en.md)
+
+Photo: MiNe (sfmine79), [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Logitech_unifying_receiver.jpg), [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/), unmodified. An appearance example, not the receiver model tested here.
 
 Prepared November 13, 2026. All test times use HST (UTC−10). This is a single-system troubleshooting record covering a working mitigation and a separate unresolved fault.
 

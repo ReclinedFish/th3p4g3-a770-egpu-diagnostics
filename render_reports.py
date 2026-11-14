@@ -41,7 +41,7 @@ def render_reports():
             f'<title>{escape(title)}</title><style>{CSS}</style></head>'
             f'<body><main>{body}</main></body></html>\n'
         )
-        (BASE / target).write_text(html, encoding="utf-8")
+        (BASE / target).write_text(html, encoding="utf-8", newline="\n")
         print("Rendered", target)
 
 

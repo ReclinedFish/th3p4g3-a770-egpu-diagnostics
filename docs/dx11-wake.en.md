@@ -17,7 +17,7 @@ Monitoring continued for two minutes after the final run. The logs showed no Thu
 
 This test covered one machine. The cable and port used for the retest were not recorded. The previously observed intermittent DX11 initialization failure did not recur in these four runs, and its cause remains unresolved.
 
-On Windows, install the .NET 10 SDK and PowerShell 7. Configure the local device instance paths as described in the [main report](../README.en.md), connect the A770, and close Kryptex. Run these commands from the repository root:
+On Windows, install the .NET 10 SDK and PowerShell 7. Connect the A770, close Kryptex, and verify automatic discovery as described in the [main report](../README.en.md). Configure local instance paths only if an explicit override is needed. Run these commands from the repository root:
 
 ```powershell
 dotnet build .\tools\Dx11ArcBatched\Dx11ArcBatched.csproj -c Release
